@@ -39,15 +39,18 @@ class HomeController extends Controller
                 $userId = 0;
             }
         }
-
+        
+        $artists = $this->artist->allPaginated(1, 10);
+        $albums = $this->album->allPaginated(1, 10);
+        
         $this->success([
             // 'banner' => $this->banners(),
             'trending' => $this->song->trending(10),
             'popular' => $this->song->popular(10),
             'new_release' => $this->song->latest(10),
             'recommended' => $this->song->recommended($userId),
-            'top_artists' => $this->artist->all(10, 0),
-            'top_albums' => $this->album->all(10, 0),
+            'top_artists' => $artists['data'],
+            'top_albums' => $albums['data'],
             'continue_listening' => $this->continueListening($userId)
         ]);
     }
