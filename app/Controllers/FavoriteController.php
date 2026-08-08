@@ -22,11 +22,13 @@ class FavoriteController extends Controller
     {
         $userId = $this->userId();
 
-        $page = max(1, (int)($_GET['page'] ?? 1));
-
-        $result = $this->favorite->all($userId, $page);
-
-        $this->success($result);
+        $this->success(
+            $this->favorite->all(
+                $userId,
+                (int)($_GET['page'] ?? 1),
+                (int)($_GET['limit'] ?? DEFAULT_LIMIT)
+            )
+        );
     }
 
     public function store(): void

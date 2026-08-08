@@ -9,67 +9,98 @@ use App\Core\Model;
 
 class Favorite extends Model
 {
-    public function all(int $userId, int $page = 1): array
-    {
+    public function all(
+        int $userId,
+        int $page = 1,
+        int $limit = DEFAULT_LIMIT
+    ): array {
         $page = max(1, $page);
+        $limit = max(1, min($limit, MAX_LIMIT));
 
-        $limit = DEFAULT_LIMIT;
         $offset = ($page - 1) * $limit;
 
-        $db = \App\Core\Database::getInstance()->connection();
+        // -----------------------------------------
+        // Total favorites
+        // -----------------------------------------
 
-        $countStmt = $db->prepare("
+        $stmt = $this->db->prepare("
         SELECT COUNT(*) AS total
         FROM favorites
         WHERE user_id = ?
     ");
 
-        $countStmt->bind_param('i', $userId);
-        $countStmt->execute();
+        $stmt->bind_param("i", $userId);
+        $stmt->execute();
 
-        $total = (int)$countStmt->get_result()->fetch_assoc()['total'];
+        $total = (int)$stmt
+            ->get_result()
+            ->fetch_assoc()['total'];
 
-        $countStmt->close();
+        $stmt->close();
 
-        $stmt = $db->prepare("
+        // -----------------------------------------
+        // Favorite records
+        // -----------------------------------------
+
+        $stmt = $this->db->prepare("
         SELECT
-            f.id,
-            f.song_id,
-            f.created_at,
-            s.title,
-            s.slug,
-            s.cover_url,
-            s.audio_url,
-            s.duration_seconds
-        FROM favorites f
-        INNER JOIN songs s ON s.id = f.song_id
-        WHERE f.user_id = ?
-        ORDER BY f.id DESC
+            id,
+            song_id,
+            created_at
+        FROM favorites
+        WHERE user_id = ?
+        ORDER BY created_at DESC
         LIMIT ? OFFSET ?
     ");
 
-        $stmt->bind_param('iii', $userId, $limit, $offset);
+        $stmt->bind_param(
+            "iii",
+            $userId,
+            $limit,
+            $offset
+        );
+
         $stmt->execute();
 
         $result = $stmt->get_result();
 
         $favorites = [];
 
+        $songModel = new \App\Models\Song();
+
         while ($row = $result->fetch_assoc()) {
-            $favorites[] = $row;
+
+            $song = $songModel->find(
+                (int)$row['song_id']
+            );
+
+            if ($song === null) {
+                continue;
+            }
+
+            $favorites[] = [
+                'id' => (int)$row['id'],
+                'created_at' => $row['created_at'],
+                'song' => $song
+            ];
         }
 
         $stmt->close();
 
+        $totalPages = $total > 0
+            ? (int)ceil($total / $limit)
+            : 0;
+
         return [
-            'items' => $favorites,
+            'data' => $favorites,
+
             'pagination' => [
                 'page' => $page,
                 'limit' => $limit,
                 'total' => $total,
-                'total_pages' => $total > 0
-                    ? (int)ceil($total / $limit)
-                    : 0
+                'total_pages' => $totalPages,
+                'has_next' => $page < $totalPages,
+                'has_previous' => $page > 1
             ]
         ];
     }

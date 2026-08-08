@@ -22,11 +22,13 @@ class HistoryController extends Controller
     {
         $userId = $this->userId();
 
-        $page = max(1, (int)($_GET['page'] ?? 1));
-
-        $result = $this->history->all($userId, $page);
-
-        $this->success($result);
+        $this->success(
+            $this->history->all(
+                $userId,
+                (int)($_GET['page'] ?? 1),
+                (int)($_GET['limit'] ?? DEFAULT_LIMIT)
+            )
+        );
     }
 
     public function store(): void

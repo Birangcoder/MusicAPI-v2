@@ -9,67 +9,105 @@ use App\Core\Model;
 
 class History extends Model
 {
-    public function all(int $userId, int $page = 1): array
-    {
+    public function all(
+        int $userId,
+        int $page = 1,
+        int $limit = DEFAULT_LIMIT
+    ): array {
         $page = max(1, $page);
+        $limit = max(1, min($limit, MAX_LIMIT));
 
-        $limit = DEFAULT_LIMIT;
         $offset = ($page - 1) * $limit;
 
-        $db = \App\Core\Database::getInstance()->connection();
+        // -----------------------------------------
+        // Total history
+        // -----------------------------------------
 
-        $countStmt = $db->prepare("
+        $stmt = $this->db->prepare("
         SELECT COUNT(*) AS total
         FROM history
         WHERE user_id = ?
     ");
 
-        $countStmt->bind_param('i', $userId);
-        $countStmt->execute();
+        $stmt->bind_param("i", $userId);
+        $stmt->execute();
 
-        $total = (int)$countStmt->get_result()->fetch_assoc()['total'];
+        $total = (int)$stmt
+            ->get_result()
+            ->fetch_assoc()['total'];
 
-        $countStmt->close();
+        $stmt->close();
 
-        $stmt = $db->prepare("
+        // -----------------------------------------
+        // History records
+        // -----------------------------------------
+
+        $stmt = $this->db->prepare("
         SELECT
-            h.id,
-            h.song_id,
-            h.played_at,
-            s.title,
-            s.slug,
-            s.cover_url,
-            s.audio_url,
-            s.duration_seconds
-        FROM history h
-        INNER JOIN songs s ON s.id = h.song_id
-        WHERE h.user_id = ?
-        ORDER BY h.played_at DESC
+            id,
+            song_id,
+            played_at,
+            play_duration,
+            completed,
+            device
+        FROM history
+        WHERE user_id = ?
+        ORDER BY played_at DESC
         LIMIT ? OFFSET ?
     ");
 
-        $stmt->bind_param('iii', $userId, $limit, $offset);
+        $stmt->bind_param(
+            "iii",
+            $userId,
+            $limit,
+            $offset
+        );
+
         $stmt->execute();
 
         $result = $stmt->get_result();
 
         $history = [];
 
+        $songModel = new \App\Models\Song();
+
         while ($row = $result->fetch_assoc()) {
-            $history[] = $row;
+
+            $song = $songModel->find(
+                (int)$row['song_id']
+            );
+
+            if ($song === null) {
+                continue;
+            }
+
+            $history[] = [
+                'id' => (int)$row['id'],
+                'played_at' => $row['played_at'],
+                'play_duration' => (int)$row['play_duration'],
+                'completed' => (bool)$row['completed'],
+                'device' => $row['device'],
+
+                'song' => $song
+            ];
         }
 
         $stmt->close();
 
+        $totalPages = $total > 0
+            ? (int)ceil($total / $limit)
+            : 0;
+
         return [
-            'items' => $history,
+            'data' => $history,
+
             'pagination' => [
                 'page' => $page,
                 'limit' => $limit,
                 'total' => $total,
-                'total_pages' => $total > 0
-                    ? (int)ceil($total / $limit)
-                    : 0
+                'total_pages' => $totalPages,
+                'has_next' => $page < $totalPages,
+                'has_previous' => $page > 1
             ]
         ];
     }
