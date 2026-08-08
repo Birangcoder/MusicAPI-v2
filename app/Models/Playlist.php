@@ -34,9 +34,11 @@ class Playlist extends Model
         $stmt = $db->prepare("
         SELECT
             id,
-            name,
+            user_id,
+            title,
             description,
             cover_url,
+            is_public,
             total_songs,
             created_at,
             updated_at
@@ -74,10 +76,11 @@ class Playlist extends Model
 
     public function findWithTracks(int $id): ?array
     {
-        $db = Database::getInstance()->connection();
-
+        // -----------------------------------------
         // Get playlist
-        $stmt = $db->prepare("
+        // -----------------------------------------
+
+        $stmt = $this->db->prepare("
         SELECT
             id,
             user_id,
@@ -96,8 +99,7 @@ class Playlist extends Model
         $stmt->bind_param("i", $id);
         $stmt->execute();
 
-        $result = $stmt->get_result();
-        $playlist = $result->fetch_assoc();
+        $playlist = $stmt->get_result()->fetch_assoc();
 
         $stmt->close();
 
@@ -105,15 +107,31 @@ class Playlist extends Model
             return null;
         }
 
-        // Get playlist songs
-        $stmt = $db->prepare("
+        // -----------------------------------------
+        // Get songs
+        // -----------------------------------------
+
+        $stmt = $this->db->prepare("
         SELECT
-            song_id,
-            position,
-            added_at
-        FROM playlist_songs
-        WHERE playlist_id = ?
-        ORDER BY position ASC
+            s.id,
+            s.title,
+            s.slug,
+            s.cover_url,
+            s.audio_url,
+            s.language,
+            s.duration_seconds,
+            ps.position,
+            ps.added_at
+        FROM playlist_songs ps
+
+        INNER JOIN songs s
+            ON s.id = ps.song_id
+
+        WHERE ps.playlist_id = ?
+          AND s.is_active = 1
+          AND s.deleted_at IS NULL
+
+        ORDER BY ps.position ASC, ps.added_at ASC
     ");
 
         $stmt->bind_param("i", $id);
@@ -121,35 +139,41 @@ class Playlist extends Model
 
         $result = $stmt->get_result();
 
-        $songModel = new Song();
-        $tracks = [];
+        $songs = [];
 
         while ($row = $result->fetch_assoc()) {
 
-            $song = $songModel->find((int) $row['song_id']);
+            $songs[] = [
+                'id' => (int)$row['id'],
+                'title' => $row['title'],
+                'slug' => $row['slug'],
 
-            if ($song) {
-                $song['position'] = (int) $row['position'];
-                $song['added_at'] = $row['added_at'];
+                'media' => [
+                    'cover_url' => $row['cover_url'],
+                    'audio_url' => $row['audio_url'],
+                    'duration_seconds' => (int)$row['duration_seconds']
+                ],
 
-                $tracks[] = $song;
-            }
+                'language' => $row['language'],
+
+                'playlist' => [
+                    'position' => (int)$row['position'],
+                    'added_at' => $row['added_at']
+                ]
+            ];
         }
 
         $stmt->close();
 
-        return [
-            'id' => (int) $playlist['id'],
-            'user_id' => (int) $playlist['user_id'],
-            'title' => $playlist['title'],
-            'description' => $playlist['description'],
-            'cover_url' => $playlist['cover_url'],
-            'is_public' => (bool) $playlist['is_public'],
-            'total_songs' => (int) $playlist['total_songs'],
-            'created_at' => $playlist['created_at'],
-            'updated_at' => $playlist['updated_at'],
-            'tracks' => $tracks
-        ];
+        // Convert database values
+        $playlist['id'] = (int)$playlist['id'];
+        $playlist['user_id'] = (int)$playlist['user_id'];
+        $playlist['is_public'] = (bool)$playlist['is_public'];
+        $playlist['total_songs'] = (int)$playlist['total_songs'];
+
+        $playlist['songs'] = $songs;
+
+        return $playlist;
     }
 
     public function find(int $playlistId, int $userId): ?array

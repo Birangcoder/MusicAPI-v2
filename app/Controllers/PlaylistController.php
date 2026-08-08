@@ -22,8 +22,8 @@ class PlaylistController extends Controller
     {
         $playlist = $this->playlist->findWithTracks($id);
 
-        if (!$playlist) {
-            $this->error('Playlist not found.', 404);
+        if ($playlist === null) {
+            $this->error('Playlist not found', 404);
             return;
         }
 

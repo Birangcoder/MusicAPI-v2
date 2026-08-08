@@ -459,29 +459,114 @@ class Song extends Model
 
     public function search(
         string $keyword,
-        int $limit = 20
+        int $page = 1,
+        int $limit = DEFAULT_LIMIT
     ): array {
+
+        $page = max(1, $page);
+        $limit = max(1, min($limit, MAX_LIMIT));
+
+        $offset = ($page - 1) * $limit;
 
         $keyword = "%{$keyword}%";
 
+        // -----------------------------------------
+        // Total songs
+        // -----------------------------------------
+
         $stmt = $this->db->prepare("
-            SELECT *
-            FROM songs
-            WHERE
-                deleted_at IS NULL
-            AND
-                (
-                    title LIKE ?
-                    OR description LIKE ?
-                )
-            LIMIT ?
-        ");
+        SELECT COUNT(DISTINCT s.id) AS total
+
+        FROM songs s
+
+        LEFT JOIN song_artists sa
+            ON sa.song_id = s.id
+
+        LEFT JOIN artists a
+            ON a.id = sa.artist_id
+
+        WHERE
+            s.is_active = 1
+        AND
+            s.deleted_at IS NULL
+        AND
+        (
+            s.title LIKE ?
+            OR s.slug LIKE ?
+            OR a.name LIKE ?
+            OR a.slug LIKE ?
+        )
+    ");
 
         $stmt->bind_param(
-            "ssi",
+            "ssss",
             $keyword,
             $keyword,
-            $limit
+            $keyword,
+            $keyword
+        );
+
+        $stmt->execute();
+
+        $total = (int)$stmt
+            ->get_result()
+            ->fetch_assoc()['total'];
+
+        $stmt->close();
+
+        // -----------------------------------------
+        // Songs
+        // -----------------------------------------
+
+        $stmt = $this->db->prepare("
+        SELECT DISTINCT
+
+            s.id,
+            s.title,
+            s.slug,
+            s.cover_url,
+            s.audio_url,
+            s.language,
+            s.duration_seconds,
+            s.release_date,
+            s.play_count,
+            s.like_count,
+            s.download_count
+
+        FROM songs s
+
+        LEFT JOIN song_artists sa
+            ON sa.song_id = s.id
+
+        LEFT JOIN artists a
+            ON a.id = sa.artist_id
+
+        WHERE
+            s.is_active = 1
+        AND
+            s.deleted_at IS NULL
+        AND
+        (
+            s.title LIKE ?
+            OR s.slug LIKE ?
+            OR a.name LIKE ?
+            OR a.slug LIKE ?
+        )
+
+        ORDER BY
+            s.title ASC
+
+        LIMIT ? OFFSET ?
+    ");
+
+        $stmt->bind_param(
+            "ssssii",
+            $keyword,
+            $keyword,
+            $keyword,
+            $keyword,
+            $limit,
+            $offset
         );
 
         $stmt->execute();
@@ -491,12 +576,47 @@ class Song extends Model
         $songs = [];
 
         while ($row = $result->fetch_assoc()) {
-            $songs[] = $this->formatSong($row);
+
+            $songs[] = [
+                'id' => (int)$row['id'],
+                'title' => $row['title'],
+                'slug' => $row['slug'],
+
+                'media' => [
+                    'cover_url' => $row['cover_url'],
+                    'audio_url' => $row['audio_url'],
+                    'duration_seconds' => (int)$row['duration_seconds']
+                ],
+
+                'language' => $row['language'],
+                'release_date' => $row['release_date'],
+
+                'statistics' => [
+                    'play_count' => (int)$row['play_count'],
+                    'like_count' => (int)$row['like_count'],
+                    'download_count' => (int)$row['download_count']
+                ]
+            ];
         }
 
         $stmt->close();
 
-        return $songs;
+        $totalPages = $total > 0
+            ? (int)ceil($total / $limit)
+            : 0;
+
+        return [
+            'data' => $songs,
+
+            'pagination' => [
+                'page' => $page,
+                'limit' => $limit,
+                'total' => $total,
+                'total_pages' => $totalPages,
+                'has_next' => $page < $totalPages,
+                'has_previous' => $page > 1
+            ]
+        ];
     }
 
     public function latest(

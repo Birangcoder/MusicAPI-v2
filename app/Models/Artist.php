@@ -48,6 +48,101 @@ class Artist
         return $artist ?: null;
     }
 
+    public function search(
+        string $keyword,
+        int $page = 1,
+        int $limit = DEFAULT_LIMIT
+    ): array {
+
+        $page = max(1, $page);
+        $limit = max(1, min($limit, MAX_LIMIT));
+
+        $offset = ($page - 1) * $limit;
+
+        $keyword = "%{$keyword}%";
+
+        // -----------------------------------------
+        // Total artists
+        // -----------------------------------------
+
+        $stmt = $this->db->prepare("
+        SELECT COUNT(*) AS total
+        FROM artists
+        WHERE deleted_at IS NULL
+        AND name LIKE ?
+    ");
+
+        $stmt->bind_param("s", $keyword);
+        $stmt->execute();
+
+        $total = (int)$stmt
+            ->get_result()
+            ->fetch_assoc()['total'];
+
+        $stmt->close();
+
+        // -----------------------------------------
+        // Artists
+        // -----------------------------------------
+
+        $stmt = $this->db->prepare("
+        SELECT
+            id,
+            name,
+            slug,
+            image_url,
+            verified
+        FROM artists
+        WHERE deleted_at IS NULL
+        AND name LIKE ?
+        ORDER BY name ASC
+        LIMIT ? OFFSET ?
+    ");
+
+        $stmt->bind_param(
+            "sii",
+            $keyword,
+            $limit,
+            $offset
+        );
+
+        $stmt->execute();
+
+        $result = $stmt->get_result();
+
+        $artists = [];
+
+        while ($row = $result->fetch_assoc()) {
+
+            $artists[] = [
+                'id' => (int)$row['id'],
+                'name' => $row['name'],
+                'slug' => $row['slug'],
+                'image_url' => $row['image_url'],
+                'verified' => (bool)$row['verified']
+            ];
+        }
+
+        $stmt->close();
+
+        $totalPages = $total > 0
+            ? (int)ceil($total / $limit)
+            : 0;
+
+        return [
+            'data' => $artists,
+
+            'pagination' => [
+                'page' => $page,
+                'limit' => $limit,
+                'total' => $total,
+                'total_pages' => $totalPages,
+                'has_next' => $page < $totalPages,
+                'has_previous' => $page > 1
+            ]
+        ];
+    }
+
     /*
     |--------------------------------------------------------------------------
     | All Artists - Pagination
