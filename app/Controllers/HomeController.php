@@ -45,7 +45,7 @@ class HomeController extends Controller
         
         $this->success([
             // 'banner' => $this->banners(),
-            'trending' => $this->song->trending(10),
+            'trending' => $this->song->trending(),
             'popular' => $this->song->popular(10),
             'new_release' => $this->song->latest(10),
             'recommended' => $this->song->recommended($userId),

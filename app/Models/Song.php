@@ -619,40 +619,20 @@ class Song extends Model
         ];
     }
 
-    public function latest(
-        int $page = 1,
-        int $limit = DEFAULT_LIMIT
-    ): array {
-        $page = max(1, $page);
-        $limit = max(1, min($limit, MAX_LIMIT));
+    public function latest(int $limit = 20): array
+    {
+        $limit = max(4, min($limit, MAX_LIMIT));
 
-        $db = Database::getInstance()->connection();
-
-        $result = $db->query("
-        SELECT COUNT(*) AS total
-        FROM songs
-        WHERE is_active = 1
-        AND deleted_at IS NULL
-    ");
-
-        $total = (int)$result->fetch_assoc()['total'];
-
-        $offset = ($page - 1) * $limit;
-
-        $stmt = $db->prepare("
-        SELECT id
+        $stmt = $this->db->prepare("
+        SELECT *
         FROM songs
         WHERE is_active = 1
         AND deleted_at IS NULL
         ORDER BY release_date DESC, id DESC
-        LIMIT ? OFFSET ?
+        LIMIT ?
     ");
 
-        $stmt->bind_param(
-            "ii",
-            $limit,
-            $offset
-        );
+        $stmt->bind_param("i", $limit);
 
         $stmt->execute();
 
@@ -661,62 +641,28 @@ class Song extends Model
         $songs = [];
 
         while ($row = $result->fetch_assoc()) {
-
-            $song = $this->find(
-                (int)$row['id']
-            );
-
-            if ($song !== null) {
-                $songs[] = $song;
-            }
+            $songs[] = $this->formatSong($row);
         }
 
         $stmt->close();
 
-        return [
-            'tracks' => $songs,
-            'pagination' => $this->pagination(
-                $page,
-                $limit,
-                $total
-            )
-        ];
+        return $songs;
     }
 
-    public function popular(
-        int $page = 1,
-        int $limit = DEFAULT_LIMIT
-    ): array {
-        $page = max(1, $page);
-        $limit = max(1, min($limit, MAX_LIMIT));
+    public function popular(int $limit = 20): array
+    {
+        $limit = max(4, min($limit, MAX_LIMIT));
 
-        $db = Database::getInstance()->connection();
-
-        $result = $db->query("
-        SELECT COUNT(*) AS total
+        $stmt = $this->db->prepare("
+        SELECT *
         FROM songs
         WHERE is_active = 1
         AND deleted_at IS NULL
+        ORDER BY play_count DESC, id DESC
+        LIMIT ?
     ");
 
-        $total = (int)$result->fetch_assoc()['total'];
-
-        $offset = ($page - 1) * $limit;
-
-        $stmt = $db->prepare("
-        SELECT id
-        FROM songs
-        WHERE is_active = 1
-        AND deleted_at IS NULL
-        ORDER BY play_count DESC, like_count DESC, id DESC
-        LIMIT ? OFFSET ?
-    ");
-
-        $stmt->bind_param(
-            "ii",
-            $limit,
-            $offset
-        );
+        $stmt->bind_param("i", $limit);
 
         $stmt->execute();
 
@@ -725,26 +671,12 @@ class Song extends Model
         $songs = [];
 
         while ($row = $result->fetch_assoc()) {
-
-            $song = $this->find(
-                (int)$row['id']
-            );
-
-            if ($song !== null) {
-                $songs[] = $song;
-            }
+            $songs[] = $this->formatSong($row);
         }
 
         $stmt->close();
 
-        return [
-            'tracks' => $songs,
-            'pagination' => $this->pagination(
-                $page,
-                $limit,
-                $total
-            )
-        ];
+        return $songs;
     }
 
     public function trending(

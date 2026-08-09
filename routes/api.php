@@ -43,6 +43,7 @@ $router->get('songs', [SongController::class, 'index']);
 
 $router->get('songs/trending', [SongController::class, 'trending']);
 $router->get('songs/popular', [SongController::class, 'popular']);
+$router->get('songs/latest', [SongController::class, 'latest']);
 $router->get('songs/new', [SongController::class, 'latest']);
 $router->get('songs/recommended', [SongController::class, 'recommended']);
 
