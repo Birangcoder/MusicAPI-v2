@@ -16,57 +16,50 @@ class Album extends Model
 
     public function allPaginated(
         int $page = 1,
-        int $limit = 20
+        int $limit = DEFAULT_LIMIT
     ): array {
-
         $page = max(1, $page);
         $limit = max(1, min($limit, MAX_LIMIT));
 
         $offset = ($page - 1) * $limit;
 
         /*
-        |--------------------------------------------------------------------------
-        | Total Albums
-        |--------------------------------------------------------------------------
-        */
+    |--------------------------------------------------------------------------
+    | Total Albums
+    |--------------------------------------------------------------------------
+    */
 
-        $countStmt = $this->db->prepare("
-            SELECT COUNT(*) AS total
-            FROM albums
-            WHERE deleted_at IS NULL
-        ");
+        $totalResult = $this->db->query("
+        SELECT COUNT(*) AS total
+        FROM albums
+        WHERE deleted_at IS NULL
+    ");
 
-        $countStmt->execute();
-
-        $countResult = $countStmt->get_result();
-
-        $total = (int)$countResult->fetch_assoc()['total'];
-
-        $countStmt->close();
+        $total = (int)$totalResult->fetch_assoc()['total'];
 
         /*
-        |--------------------------------------------------------------------------
-        | Albums
-        |--------------------------------------------------------------------------
-        */
+    |--------------------------------------------------------------------------
+    | Albums
+    |--------------------------------------------------------------------------
+    */
 
         $stmt = $this->db->prepare("
-            SELECT
-                id,
-                title,
-                slug,
-                description,
-                cover_url,
-                release_date,
-                album_type,
-                copyright,
-                label,
-                total_tracks
-            FROM albums
-            WHERE deleted_at IS NULL
-            ORDER BY release_date DESC, id DESC
-            LIMIT ? OFFSET ?
-        ");
+        SELECT
+            id,
+            title,
+            slug,
+            description,
+            cover_url,
+            release_date,
+            album_type,
+            copyright,
+            label,
+            total_tracks
+        FROM albums
+        WHERE deleted_at IS NULL
+        ORDER BY id DESC
+        LIMIT ? OFFSET ?
+    ");
 
         $stmt->bind_param(
             "ii",
@@ -82,17 +75,89 @@ class Album extends Model
 
         while ($row = $result->fetch_assoc()) {
 
+            /*
+        |--------------------------------------------------------------------------
+        | Album Artists
+        |--------------------------------------------------------------------------
+        */
+
+            $artistStmt = $this->db->prepare("
+            SELECT DISTINCT
+                ar.id,
+                ar.name,
+                ar.slug,
+                ar.image_url,
+                ar.verified
+            FROM song_albums sal
+
+            INNER JOIN song_artists sa
+                ON sa.song_id = sal.song_id
+
+            INNER JOIN artists ar
+                ON ar.id = sa.artist_id
+
+            WHERE sal.album_id = ?
+            AND ar.deleted_at IS NULL
+
+            ORDER BY ar.name ASC
+        ");
+
+            $albumId = (int)$row['id'];
+
+            $artistStmt->bind_param(
+                "i",
+                $albumId
+            );
+
+            $artistStmt->execute();
+
+            $artistResult = $artistStmt->get_result();
+
+            $artists = [];
+
+            while ($artist = $artistResult->fetch_assoc()) {
+
+                $artists[] = [
+                    'id' => (int)$artist['id'],
+                    'name' => $artist['name'],
+                    'slug' => $artist['slug'],
+                    'image_url' => $artist['image_url'],
+                    'verified' => (bool)$artist['verified']
+                ];
+            }
+
+            $artistStmt->close();
+
+            /*
+        |--------------------------------------------------------------------------
+        | Album Response
+        |--------------------------------------------------------------------------
+        */
+
             $albums[] = [
                 'id' => (int)$row['id'],
                 'title' => $row['title'],
                 'slug' => $row['slug'],
-                'description' => $row['description'],
-                'cover_url' => $row['cover_url'],
-                'release_date' => $row['release_date'],
-                'album_type' => $row['album_type'],
-                'copyright' => $row['copyright'],
-                'label' => $row['label'],
-                'total_tracks' => (int)$row['total_tracks']
+
+                'media' => [
+                    'cover_url' => $row['cover_url']
+                ],
+
+                'metadata' => [
+                    'description' => $row['description'],
+                    'release_date' => $row['release_date'],
+                    'album_type' => $row['album_type'],
+                    'label' => $row['label'],
+                    'copyright' => $row['copyright'],
+                    'total_tracks' => (int)$row['total_tracks']
+                ],
+
+                'artists' => $artists,
+
+                'links' => [
+                    'self' => '/albums/' . $row['id'],
+                    'tracks' => '/albums/' . $row['id'] . '/tracks'
+                ]
             ];
         }
 
@@ -101,11 +166,20 @@ class Album extends Model
         return [
             'data' => $albums,
 
-            'pagination' => $this->pagination(
-                $page,
-                $limit,
-                $total
-            )
+            'pagination' => [
+                'page' => $page,
+                'limit' => $limit,
+                'total' => $total,
+                'total_pages' => $total > 0
+                    ? (int)ceil($total / $limit)
+                    : 0,
+                'has_next' => $page < (
+                    $total > 0
+                    ? (int)ceil($total / $limit)
+                    : 0
+                ),
+                'has_previous' => $page > 1
+            ]
         ];
     }
 

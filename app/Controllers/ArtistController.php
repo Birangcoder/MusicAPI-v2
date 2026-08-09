@@ -24,22 +24,18 @@ class ArtistController extends Controller
 
     public function index(): void
     {
-        $page = isset($_GET['page'])
-            ? max(1, (int)$_GET['page'])
-            : 1;
-
-        $limit = isset($_GET['limit'])
-            ? (int)$_GET['limit']
-            : DEFAULT_LIMIT;
-
-        $limit = max(1, min($limit, MAX_LIMIT));
+        $page = max(1, (int)($_GET['page'] ?? 1));
+        $limit = (int)($_GET['limit'] ?? DEFAULT_LIMIT);
 
         $result = $this->artist->allPaginated($page, $limit);
 
-        $this->success([
-            'artists' => $result['data'],
-            'pagination' => $result['pagination']
-        ]);
+        $this->success(
+            [
+                'artists' => $result['data'],
+                'pagination' => $result['pagination']
+            ],
+            'Success'
+        );
     }
 
     /*

@@ -20,10 +20,17 @@ class AlbumController extends Controller
     public function index(): void
     {
         $page = max(1, (int)($_GET['page'] ?? 1));
+        $limit = (int)($_GET['limit'] ?? DEFAULT_LIMIT);
 
-        $result = $this->album->allPaginated($page);
+        $result = $this->album->allPaginated($page, $limit);
 
-        $this->success($result);
+        $this->success(
+            [
+                'albums' => $result['data'],
+                'pagination' => $result['pagination']
+            ],
+            'Success'
+        );
     }
 
     public function tracks(int $id): void
