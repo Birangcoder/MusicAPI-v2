@@ -21,7 +21,7 @@ class AlbumController extends Controller
     {
         $page = max(1, (int)($_GET['page'] ?? 1));
 
-        $result = $this->album->all($page);
+        $result = $this->album->allPaginated($page);
 
         $this->success($result);
     }
