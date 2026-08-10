@@ -621,10 +621,10 @@ class Song extends Model
 
     public function latest(int $limit = 20): array
     {
-        $limit = max(4, min($limit, MAX_LIMIT));
+        $limit = max(1, min($limit, MAX_LIMIT));
 
         $stmt = $this->db->prepare("
-        SELECT *
+        SELECT id
         FROM songs
         WHERE is_active = 1
         AND deleted_at IS NULL
@@ -633,50 +633,106 @@ class Song extends Model
     ");
 
         $stmt->bind_param("i", $limit);
-
         $stmt->execute();
 
         $result = $stmt->get_result();
 
-        $songs = [];
+        $tracks = [];
 
         while ($row = $result->fetch_assoc()) {
-            $songs[] = $this->formatSong($row);
+            $song = $this->find((int)$row['id']);
+
+            if ($song !== null) {
+                $tracks[] = $song;
+            }
         }
 
         $stmt->close();
 
-        return $songs;
+        return [
+            'tracks' => $tracks
+        ];
     }
 
-    public function popular(int $limit = 20): array
-    {
-        $limit = max(4, min($limit, MAX_LIMIT));
+    public function popular(
+        int $page = 1,
+        int $limit = 20
+    ): array {
+        $page = max(1, $page);
+        $limit = max(1, min($limit, MAX_LIMIT));
+
+        $offset = ($page - 1) * $limit;
+
+        /*
+    |--------------------------------------------------------------------------
+    | Total Songs
+    |--------------------------------------------------------------------------
+    */
+
+        $countStmt = $this->db->prepare("
+        SELECT COUNT(*) AS total
+        FROM songs
+        WHERE is_active = 1
+        AND deleted_at IS NULL
+    ");
+
+        $countStmt->execute();
+
+        $total = (int)$countStmt
+            ->get_result()
+            ->fetch_assoc()['total'];
+
+        $countStmt->close();
+
+        /*
+    |--------------------------------------------------------------------------
+    | Popular Songs
+    |--------------------------------------------------------------------------
+    */
 
         $stmt = $this->db->prepare("
-        SELECT *
+        SELECT id
         FROM songs
         WHERE is_active = 1
         AND deleted_at IS NULL
         ORDER BY play_count DESC, id DESC
-        LIMIT ?
+        LIMIT ? OFFSET ?
     ");
 
-        $stmt->bind_param("i", $limit);
+        $stmt->bind_param(
+            "ii",
+            $limit,
+            $offset
+        );
 
         $stmt->execute();
 
         $result = $stmt->get_result();
 
-        $songs = [];
+        $tracks = [];
 
         while ($row = $result->fetch_assoc()) {
-            $songs[] = $this->formatSong($row);
+
+            $song = $this->find(
+                (int)$row['id']
+            );
+
+            if ($song !== null) {
+                $tracks[] = $song;
+            }
         }
 
         $stmt->close();
 
-        return $songs;
+        return [
+            'tracks' => $tracks,
+
+            'pagination' => $this->pagination(
+                $page,
+                $limit,
+                $total
+            )
+        ];
     }
 
     public function trending(
@@ -861,38 +917,19 @@ class Song extends Model
         return $id;
     }
 
-    private function formatSong(array $song): array
-    {
-        return [
-            'id' => (int)$song['id'],
-            'title' => $song['title'],
-            'slug' => $song['slug'],
-            'description' => $song['description'],
-            'lyrics' => $song['lyrics'],
-            'audio_url' => $song['audio_url'],
-            'cover_url' => $song['cover_url'],
-            'duration_seconds' => (int)$song['duration_seconds'],
-            'language' => $song['language'],
-            'release_date' => $song['release_date'],
-            'track_number' => (int)$song['track_number'],
-            'disc_number' => (int)$song['disc_number'],
-            'play_count' => (int)$song['play_count'],
-            'like_count' => (int)$song['like_count'],
-            'download_count' => (int)$song['download_count'],
-            'is_explicit' => (bool)$song['is_explicit'],
-            'is_active' => (bool)$song['is_active'],
-            'created_at' => $song['created_at'],
-            'updated_at' => $song['updated_at']
-        ];
-    }
-
     public function recommended(
         int $userId,
         int $page = 1,
-        int $limit = DEFAULT_LIMIT
+        int $limit = 20
     ): array {
         $page = max(1, $page);
         $limit = max(1, min($limit, MAX_LIMIT));
+
+        /*
+    |--------------------------------------------------------------------------
+    | If User Is Not Logged In
+    |--------------------------------------------------------------------------
+    */
 
         if ($userId <= 0) {
             return $this->popular(
@@ -901,39 +938,165 @@ class Song extends Model
             );
         }
 
-        $db = Database::getInstance()->connection();
-
-        $result = $db->query("
-        SELECT COUNT(*) AS total
-        FROM songs
-        WHERE is_active = 1
-        AND deleted_at IS NULL
-    ");
-
-        $total = (int)$result->fetch_assoc()['total'];
-
         $offset = ($page - 1) * $limit;
 
-        $stmt = $db->prepare("
-        SELECT id
-        FROM songs
-        WHERE is_active = 1
-        AND deleted_at IS NULL
-        ORDER BY RAND()
-        LIMIT ? OFFSET ?
+        /*
+    |--------------------------------------------------------------------------
+    | Get User's Favorite Artists
+    |--------------------------------------------------------------------------
+    */
+
+        $stmt = $this->db->prepare("
+        SELECT DISTINCT sa.artist_id
+        FROM favorites f
+
+        INNER JOIN song_artists sa
+            ON sa.song_id = f.song_id
+
+        WHERE f.user_id = ?
     ");
 
         $stmt->bind_param(
-            "ii",
-            $limit,
-            $offset
+            "i",
+            $userId
         );
 
         $stmt->execute();
 
         $result = $stmt->get_result();
 
-        $songs = [];
+        $artistIds = [];
+
+        while ($row = $result->fetch_assoc()) {
+            $artistIds[] = (int)$row['artist_id'];
+        }
+
+        $stmt->close();
+
+        /*
+    |--------------------------------------------------------------------------
+    | No Favorite Artists
+    |--------------------------------------------------------------------------
+    */
+
+        if (empty($artistIds)) {
+            return $this->popular(
+                $page,
+                $limit
+            );
+        }
+
+        /*
+    |--------------------------------------------------------------------------
+    | Build Artist Placeholders
+    |--------------------------------------------------------------------------
+    */
+
+        $placeholders = implode(
+            ',',
+            array_fill(
+                0,
+                count($artistIds),
+                '?'
+            )
+        );
+
+        $types = str_repeat(
+            'i',
+            count($artistIds)
+        );
+
+        /*
+    |--------------------------------------------------------------------------
+    | Total Recommended Songs
+    |--------------------------------------------------------------------------
+    */
+
+        $sql = "
+        SELECT COUNT(DISTINCT s.id) AS total
+
+        FROM songs s
+
+        INNER JOIN song_artists sa
+            ON sa.song_id = s.id
+
+        WHERE sa.artist_id IN ($placeholders)
+
+        AND s.is_active = 1
+        AND s.deleted_at IS NULL
+    ";
+
+        $stmt = $this->db->prepare($sql);
+
+        $params = [$types];
+
+        foreach ($artistIds as $id) {
+            $params[] = $id;
+        }
+
+        $this->bindDynamic(
+            $stmt,
+            $params
+        );
+
+        $stmt->execute();
+
+        $total = (int)$stmt
+            ->get_result()
+            ->fetch_assoc()['total'];
+
+        $stmt->close();
+
+        /*
+    |--------------------------------------------------------------------------
+    | Recommended Songs
+    |--------------------------------------------------------------------------
+    */
+
+        $sql = "
+        SELECT DISTINCT s.id
+
+        FROM songs s
+
+        INNER JOIN song_artists sa
+            ON sa.song_id = s.id
+
+        WHERE sa.artist_id IN ($placeholders)
+
+        AND s.is_active = 1
+        AND s.deleted_at IS NULL
+
+        ORDER BY
+            s.play_count DESC,
+            s.release_date DESC,
+            s.id DESC
+
+        LIMIT ? OFFSET ?
+    ";
+
+        $stmt = $this->db->prepare($sql);
+
+        $params = [$types];
+
+        foreach ($artistIds as $id) {
+            $params[] = $id;
+        }
+
+        $params[] = $limit;
+        $params[] = $offset;
+
+        $params[0] .= 'ii';
+
+        $this->bindDynamic(
+            $stmt,
+            $params
+        );
+
+        $stmt->execute();
+
+        $result = $stmt->get_result();
+
+        $tracks = [];
 
         while ($row = $result->fetch_assoc()) {
 
@@ -942,14 +1105,15 @@ class Song extends Model
             );
 
             if ($song !== null) {
-                $songs[] = $song;
+                $tracks[] = $song;
             }
         }
 
         $stmt->close();
 
         return [
-            'tracks' => $songs,
+            'tracks' => $tracks,
+
             'pagination' => $this->pagination(
                 $page,
                 $limit,
@@ -1051,5 +1215,21 @@ class Song extends Model
             'has_next' => $page < $totalPages,
             'has_previous' => $page > 1
         ];
+    }
+
+    private function bindDynamic(
+        \mysqli_stmt $stmt,
+        array $params
+    ): void {
+        $refs = [];
+
+        foreach ($params as $key => $value) {
+            $refs[$key] = &$params[$key];
+        }
+
+        call_user_func_array(
+            [$stmt, 'bind_param'],
+            $refs
+        );
     }
 }
