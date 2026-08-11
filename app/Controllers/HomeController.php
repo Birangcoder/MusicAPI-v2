@@ -39,7 +39,7 @@ class HomeController extends Controller
                 $userId = 0;
             }
         }
-        
+
         $trending = $this->song->trending(1, 5);
         $popular = $this->song->popular(1, 5);
         $latest = $this->song->latest(1, 5);
@@ -53,7 +53,7 @@ class HomeController extends Controller
             'recommended' => $recommended['tracks'],
             'top_artists' => $this->artist->homeCards(5),
             'top_albums' => $this->album->homeCards(5),
-            'continue_listening' => $this->continueListening($userId)
+            'continue_listening' => $this->continueListening($userId, 5)
         ]);
     }
 
@@ -95,36 +95,62 @@ class HomeController extends Controller
         return $banners;
     }
 
-    private function continueListening(int $userId): array
-    {
+    private function continueListening(
+        int $userId,
+        int $limit = 10
+    ): array {
         if ($userId <= 0) {
             return [];
         }
 
+        $limit = max(1, min($limit, MAX_LIMIT));
+
         $db = \App\Core\Database::getInstance()->connection();
+
         $stmt = $db->prepare("
-            SELECT song_id, MAX(played_at) AS last_played
-            FROM history
-            WHERE user_id = ?
-            GROUP BY song_id
-            ORDER BY last_played DESC
-            LIMIT 10
-        ");
-        $stmt->bind_param("i", $userId);
+        SELECT
+            song_id,
+            MAX(played_at) AS last_played
+        FROM history
+        WHERE user_id = ?
+        GROUP BY song_id
+        ORDER BY last_played DESC
+        LIMIT ?
+    ");
+
+        $stmt->bind_param(
+            "ii",
+            $userId,
+            $limit
+        );
+
         $stmt->execute();
+
         $result = $stmt->get_result();
+
         $rows = [];
         $songIds = [];
+
         while ($row = $result->fetch_assoc()) {
-            $songIds[] = (int)$row['song_id'];
-            $rows[(int)$row['song_id']] = $row['last_played'];
+            $songId = (int) $row['song_id'];
+
+            $songIds[] = $songId;
+            $rows[$songId] = $row['last_played'];
         }
+
         $stmt->close();
 
-        $songs = $this->song->cardsByIds($songIds);
-        foreach ($songs as &$song) {
-            $song['last_played'] = $rows[$song['id']] ?? null;
+        if (empty($songIds)) {
+            return [];
         }
+
+        $songs = $this->song->cardsByIds($songIds);
+
+        foreach ($songs as &$song) {
+            $song['last_played'] =
+                $rows[$song['id']] ?? null;
+        }
+
         unset($song);
 
         return $songs;
