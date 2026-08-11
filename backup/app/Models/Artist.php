@@ -224,34 +224,6 @@ class Artist
         ];
     }
 
-    /** Lightweight cards for home/list sections. */
-    public function homeCards(int $limit = 5): array
-    {
-        $limit = max(1, min($limit, MAX_LIMIT));
-        $stmt = $this->db->prepare("
-            SELECT id, name, slug, image_url, verified
-            FROM artists
-            WHERE deleted_at IS NULL
-            ORDER BY monthly_listeners DESC, verified DESC, name ASC
-            LIMIT ?
-        ");
-        $stmt->bind_param("i", $limit);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $artists = [];
-        while ($row = $result->fetch_assoc()) {
-            $artists[] = [
-                'id' => (int)$row['id'],
-                'name' => $row['name'],
-                'slug' => $row['slug'],
-                'image_url' => $row['image_url'],
-                'verified' => (bool)$row['verified']
-            ];
-        }
-        $stmt->close();
-        return $artists;
-    }
-
     /*
     |--------------------------------------------------------------------------
     | Artist Tracks
@@ -349,7 +321,17 @@ class Artist
     */
 
         $songModel = new Song();
-        $tracks = $songModel->cardsByIds($songIds);
+
+        $tracks = [];
+
+        foreach ($songIds as $songId) {
+
+            $song = $songModel->find($songId);
+
+            if ($song !== null) {
+                $tracks[] = $song;
+            }
+        }
 
         return [
             'data' => $tracks,

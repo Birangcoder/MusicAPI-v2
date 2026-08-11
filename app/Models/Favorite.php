@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Core\Database;
 use App\Core\Model;
+use App\Models\Song;
 
 class Favorite extends Model
 {
@@ -64,28 +65,32 @@ class Favorite extends Model
 
         $result = $stmt->get_result();
 
-        $favorites = [];
-
-        $songModel = new \App\Models\Song();
+        $rows = [];
+        $songIds = [];
 
         while ($row = $result->fetch_assoc()) {
-
-            $song = $songModel->find(
-                (int)$row['song_id']
-            );
-
-            if ($song === null) {
-                continue;
-            }
-
-            $favorites[] = [
-                'id' => (int)$row['id'],
-                'created_at' => $row['created_at'],
-                'song' => $song
-            ];
+            $row['id'] = (int)$row['id'];
+            $row['song_id'] = (int)$row['song_id'];
+            $rows[] = $row;
+            $songIds[] = (int)$row['song_id'];
         }
 
         $stmt->close();
+
+        $songsById = (new Song())->cardsByIds($songIds);
+        $songsById = array_column($songsById, null, 'id');
+        $favorites = [];
+
+        foreach ($rows as $row) {
+            if (!isset($songsById[$row['song_id']])) {
+                continue;
+            }
+            $favorites[] = [
+                'id' => $row['id'],
+                'created_at' => $row['created_at'],
+                'song' => $songsById[$row['song_id']]
+            ];
+        }
 
         $totalPages = $total > 0
             ? (int)ceil($total / $limit)

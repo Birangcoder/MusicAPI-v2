@@ -138,7 +138,10 @@ class Album extends Model
                 'id' => (int)$row['id'],
                 'title' => $row['title'],
                 'slug' => $row['slug'],
-                'cover_url' => $row['cover_url'],
+
+                'media' => [
+                    'cover_url' => $row['cover_url']
+                ],
 
                 'metadata' => [
                     'description' => $row['description'],
@@ -149,7 +152,12 @@ class Album extends Model
                     'total_tracks' => (int)$row['total_tracks']
                 ],
 
-                'artists' => $artists
+                'artists' => $artists,
+
+                'links' => [
+                    'self' => '/albums/' . $row['id'],
+                    'tracks' => '/albums/' . $row['id'] . '/tracks'
+                ]
             ];
         }
 
@@ -175,38 +183,6 @@ class Album extends Model
         ];
     }
 
-
-    /** Lightweight album cards for home/list sections. */
-    public function homeCards(int $limit = 5): array
-    {
-        $limit = max(1, min($limit, MAX_LIMIT));
-        $stmt = $this->db->prepare("
-            SELECT id, title, slug, cover_url, release_date, album_type, total_tracks
-            FROM albums
-            WHERE deleted_at IS NULL
-            ORDER BY release_date DESC, id DESC
-            LIMIT ?
-        ");
-        $stmt->bind_param("i", $limit);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $albums = [];
-        while ($row = $result->fetch_assoc()) {
-            $albums[] = [
-                'id' => (int)$row['id'],
-                'title' => $row['title'],
-                'slug' => $row['slug'],
-                'cover_url' => $row['cover_url'],
-                'metadata' => [
-                    'release_date' => $row['release_date'],
-                    'album_type' => $row['album_type'],
-                    'total_tracks' => (int)$row['total_tracks']
-                ]
-            ];
-        }
-        $stmt->close();
-        return $albums;
-    }
 
     /*
     |--------------------------------------------------------------------------

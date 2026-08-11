@@ -40,19 +40,17 @@ class HomeController extends Controller
             }
         }
         
-        $trending = $this->song->trending(1, 5);
-        $popular = $this->song->popular(1, 5);
-        $latest = $this->song->latest(1, 5);
-        $recommended = $this->song->recommended($userId, 1, 5);
-
+        $artists = $this->artist->allPaginated(1, 5);
+        $albums = $this->album->allPaginated(1, 5);
+        
         $this->success([
             // 'banner' => $this->banners(),
-            'trending' => $trending['tracks'],
-            'popular' => $popular['tracks'],
-            'new_release' => $latest['tracks'],
-            'recommended' => $recommended['tracks'],
-            'top_artists' => $this->artist->homeCards(5),
-            'top_albums' => $this->album->homeCards(5),
+            'trending' => $this->song->trending(1, 5),
+            'popular' => $this->song->popular(1, 5),
+            'new_release' => $this->song->latest(1, 5),
+            'recommended' => $this->song->recommended($userId, 1, 5),
+            'top_artists' => $artists['data'],
+            'top_albums' => $albums['data'],
             'continue_listening' => $this->continueListening($userId)
         ]);
     }
@@ -102,30 +100,44 @@ class HomeController extends Controller
         }
 
         $db = \App\Core\Database::getInstance()->connection();
+
         $stmt = $db->prepare("
-            SELECT song_id, MAX(played_at) AS last_played
-            FROM history
-            WHERE user_id = ?
-            GROUP BY song_id
+            SELECT
+                s.id,
+                s.title,
+                s.slug,
+                s.cover_url,
+                s.audio_url,
+                s.duration_seconds,
+                MAX(h.played_at) AS last_played
+            FROM history h
+
+            INNER JOIN songs s
+                ON s.id=h.song_id
+
+            WHERE
+                h.user_id=?
+
+            GROUP BY s.id
+
             ORDER BY last_played DESC
+
             LIMIT 10
         ");
-        $stmt->bind_param("i", $userId);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $rows = [];
-        $songIds = [];
-        while ($row = $result->fetch_assoc()) {
-            $songIds[] = (int)$row['song_id'];
-            $rows[(int)$row['song_id']] = $row['last_played'];
-        }
-        $stmt->close();
 
-        $songs = $this->song->cardsByIds($songIds);
-        foreach ($songs as &$song) {
-            $song['last_played'] = $rows[$song['id']] ?? null;
+        $stmt->bind_param("i", $userId);
+
+        $stmt->execute();
+
+        $result = $stmt->get_result();
+
+        $songs = [];
+
+        while ($row = $result->fetch_assoc()) {
+            $songs[] = $row;
         }
-        unset($song);
+
+        $stmt->close();
 
         return $songs;
     }

@@ -6,7 +6,6 @@ namespace App\Models;
 
 use App\Core\Database;
 use App\Core\Model;
-use App\Models\Song;
 
 class History extends Model
 {
@@ -68,35 +67,32 @@ class History extends Model
 
         $result = $stmt->get_result();
 
-        $rows = [];
-        $songIds = [];
-
-        while ($row = $result->fetch_assoc()) {
-            $row['id'] = (int)$row['id'];
-            $row['song_id'] = (int)$row['song_id'];
-            $rows[] = $row;
-            $songIds[] = (int)$row['song_id'];
-        }
-
-        $stmt->close();
-
-        $songsById = (new Song())->cardsByIds($songIds);
-        $songsById = array_column($songsById, null, 'id');
         $history = [];
 
-        foreach ($rows as $row) {
-            if (!isset($songsById[$row['song_id']])) {
+        $songModel = new \App\Models\Song();
+
+        while ($row = $result->fetch_assoc()) {
+
+            $song = $songModel->find(
+                (int)$row['song_id']
+            );
+
+            if ($song === null) {
                 continue;
             }
+
             $history[] = [
-                'id' => $row['id'],
+                'id' => (int)$row['id'],
                 'played_at' => $row['played_at'],
                 'play_duration' => (int)$row['play_duration'],
                 'completed' => (bool)$row['completed'],
                 'device' => $row['device'],
-                'song' => $songsById[$row['song_id']]
+
+                'song' => $song
             ];
         }
+
+        $stmt->close();
 
         $totalPages = $total > 0
             ? (int)ceil($total / $limit)

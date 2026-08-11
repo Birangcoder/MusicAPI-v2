@@ -45,15 +45,17 @@ class Song extends Model
 
         $result = $stmt->get_result();
 
-        $songIds = [];
+        $songs = [];
 
         while ($row = $result->fetch_assoc()) {
-            $songIds[] = (int)$row['id'];
+            $song = $this->find((int)$row['id']);
+
+            if ($song !== null) {
+                $songs[] = $song;
+            }
         }
 
         $stmt->close();
-
-        $songs = $this->cardsByIds($songIds);
 
         return [
             'tracks' => $songs,
@@ -114,6 +116,15 @@ class Song extends Model
     */
 
         $durationSeconds = (int)$song['duration_seconds'];
+
+        $minutes = intdiv($durationSeconds, 60);
+        $seconds = $durationSeconds % 60;
+
+        $duration = sprintf(
+            '%02d:%02d',
+            $minutes,
+            $seconds
+        );
 
         /*
     |--------------------------------------------------------------------------
@@ -248,11 +259,13 @@ class Song extends Model
                 'audio_url' => $song['audio_url'],
                 'cover_url' => $song['cover_url'],
                 'duration_seconds' => $durationSeconds,
+                'duration' => $duration
             ],
 
             'metadata' => [
                 'language' => $song['language'],
-                'release_date' => $song['release_date']
+                'release_date' => $song['release_date'],
+                'is_active' => (bool)$song['is_active']
             ],
 
             'statistics' => [
@@ -265,7 +278,19 @@ class Song extends Model
 
             'album' => $album ?: null,
 
-            'genres' => $genres
+            'genres' => $genres,
+
+            'links' => [
+                'self' => '/songs/' . $song['id'],
+
+                'artist' => !empty($artists)
+                    ? '/artists/' . $artists[0]['id']
+                    : null,
+
+                'album' => $album
+                    ? '/albums/' . $album['id']
+                    : null
+            ]
         ];
     }
 
@@ -406,15 +431,20 @@ class Song extends Model
 
         $result = $stmt->get_result();
 
-        $songIds = [];
+        $songs = [];
 
         while ($row = $result->fetch_assoc()) {
-            $songIds[] = (int)$row['id'];
+
+            $song = $this->find(
+                (int)$row['id']
+            );
+
+            if ($song !== null) {
+                $songs[] = $song;
+            }
         }
 
         $stmt->close();
-
-        $songs = $this->cardsByIds($songIds);
 
         return [
             'tracks' => $songs,
@@ -646,15 +676,18 @@ class Song extends Model
 
         $result = $stmt->get_result();
 
-        $songIds = [];
+        $tracks = [];
 
         while ($row = $result->fetch_assoc()) {
-            $songIds[] = (int)$row['id'];
+
+            $song = $this->find((int) $row['id']);
+
+            if ($song !== null) {
+                $tracks[] = $song;
+            }
         }
 
         $stmt->close();
-
-        $tracks = $this->cardsByIds($songIds);
 
         return [
             'tracks' => $tracks,
@@ -726,15 +759,18 @@ class Song extends Model
 
         $result = $stmt->get_result();
 
-        $songIds = [];
+        $tracks = [];
 
         while ($row = $result->fetch_assoc()) {
-            $songIds[] = (int)$row['id'];
+
+            $song = $this->find((int) $row['id']);
+
+            if ($song !== null) {
+                $tracks[] = $song;
+            }
         }
 
         $stmt->close();
-
-        $tracks = $this->cardsByIds($songIds);
 
         return [
             'tracks' => $tracks,
@@ -833,18 +869,29 @@ class Song extends Model
 
         $result = $stmt->get_result();
 
-        $songIds = [];
+        $songs = [];
 
         while ($row = $result->fetch_assoc()) {
-            $id = (int)$row['id'];
-            $songIds[] = $id;
+
+            $song = $this->find(
+                (int)$row['id']
+            );
+
+            if ($song !== null) {
+
+                $song['trending'] = [
+                    'recent_play_count' =>
+                    (int)$row['recent_play_count'],
+
+                    'completed_play_count' =>
+                    (int)$row['completed_play_count']
+                ];
+
+                $songs[] = $song;
+            }
         }
 
         $stmt->close();
-
-        $songs = $this->cardsByIds($songIds);
-
-        unset($song);
 
         return [
             'tracks' => $songs,
@@ -1097,15 +1144,20 @@ class Song extends Model
 
         $result = $stmt->get_result();
 
-        $songIds = [];
+        $tracks = [];
 
         while ($row = $result->fetch_assoc()) {
-            $songIds[] = (int)$row['id'];
+
+            $song = $this->find(
+                (int)$row['id']
+            );
+
+            if ($song !== null) {
+                $tracks[] = $song;
+            }
         }
 
         $stmt->close();
-
-        $tracks = $this->cardsByIds($songIds);
 
         return [
             'tracks' => $tracks,
@@ -1192,117 +1244,6 @@ class Song extends Model
         $stmt->execute();
 
         $stmt->close();
-    }
-
-    /**
-     * Lightweight song representation for list/home endpoints.
-     * This deliberately excludes lyrics, description, genres, album,
-     * statistics and timestamps. Full details remain available through find().
-     */
-    public function cardsByIds(array $ids): array
-    {
-        $ids = array_values(array_unique(array_filter(
-            array_map('intval', $ids),
-            static fn(int $id): bool => $id > 0
-        )));
-
-        if ($ids === []) {
-            return [];
-        }
-
-        $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        $types = str_repeat('i', count($ids));
-
-        $stmt = $this->db->prepare("
-            SELECT
-                s.id,
-                s.title,
-                s.slug,
-                s.cover_url,
-                s.audio_url,
-                s.duration_seconds,
-                s.language,
-                s.release_date,
-                GROUP_CONCAT(
-                    DISTINCT CONCAT(
-                        a.id, '::', a.name, '::', a.slug
-                    )
-                    ORDER BY
-                        CASE WHEN sa.role = 'primary' THEN 0 ELSE 1 END,
-                        a.name ASC
-                    SEPARATOR '||'
-                ) AS artist_data
-            FROM songs s
-            LEFT JOIN song_artists sa
-                ON sa.song_id = s.id
-            LEFT JOIN artists a
-                ON a.id = sa.artist_id
-                AND a.deleted_at IS NULL
-            WHERE s.id IN ($placeholders)
-            GROUP BY
-                s.id,
-                s.title,
-                s.slug,
-                s.cover_url,
-                s.audio_url,
-                s.duration_seconds,
-                s.language,
-                s.release_date
-        ");
-
-        $params = [$types];
-        foreach ($ids as $id) {
-            $params[] = $id;
-        }
-        $this->bindDynamic($stmt, $params);
-        $stmt->execute();
-
-        $result = $stmt->get_result();
-        $byId = [];
-
-        while ($row = $result->fetch_assoc()) {
-            $artists = [];
-            if (!empty($row['artist_data'])) {
-                foreach (explode('||', $row['artist_data']) as $artist) {
-                    $parts = explode('::', $artist, 3);
-                    if (count($parts) === 3) {
-                        $artists[] = [
-                            'id' => (int)$parts[0],
-                            'name' => $parts[1],
-                            'slug' => $parts[2]
-                        ];
-                    }
-                }
-            }
-
-            $seconds = (int)$row['duration_seconds'];
-            $byId[(int)$row['id']] = [
-                'id' => (int)$row['id'],
-                'title' => $row['title'],
-                'slug' => $row['slug'],
-                'media' => [
-                    'cover_url' => $row['cover_url'],
-                    'audio_url' => $row['audio_url'],
-                    'duration_seconds' => $seconds,
-                ],
-                'metadata' => [
-                    'language' => $row['language'],
-                    'release_date' => $row['release_date']
-                ],
-                'artists' => $artists
-            ];
-        }
-
-        $stmt->close();
-
-        $ordered = [];
-        foreach ($ids as $id) {
-            if (isset($byId[$id])) {
-                $ordered[] = $byId[$id];
-            }
-        }
-
-        return $ordered;
     }
 
     private function pagination(
