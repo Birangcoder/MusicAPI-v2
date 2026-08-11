@@ -619,42 +619,7 @@ class Song extends Model
         ];
     }
 
-    public function latest(int $limit = 20): array
-    {
-        $limit = max(1, min($limit, MAX_LIMIT));
-
-        $stmt = $this->db->prepare("
-        SELECT id
-        FROM songs
-        WHERE is_active = 1
-        AND deleted_at IS NULL
-        ORDER BY release_date DESC, id DESC
-        LIMIT ?
-    ");
-
-        $stmt->bind_param("i", $limit);
-        $stmt->execute();
-
-        $result = $stmt->get_result();
-
-        $tracks = [];
-
-        while ($row = $result->fetch_assoc()) {
-            $song = $this->find((int)$row['id']);
-
-            if ($song !== null) {
-                $tracks[] = $song;
-            }
-        }
-
-        $stmt->close();
-
-        return [
-            'tracks' => $tracks
-        ];
-    }
-
-    public function popular(
+    public function latest(
         int $page = 1,
         int $limit = 20
     ): array {
@@ -665,20 +630,20 @@ class Song extends Model
 
         /*
     |--------------------------------------------------------------------------
-    | Total Songs
+    | Total
     |--------------------------------------------------------------------------
     */
 
         $countStmt = $this->db->prepare("
-        SELECT COUNT(*) AS total
-        FROM songs
-        WHERE is_active = 1
-        AND deleted_at IS NULL
-    ");
+            SELECT COUNT(*) AS total
+            FROM songs
+            WHERE is_active = 1
+            AND deleted_at IS NULL
+        ");
 
         $countStmt->execute();
 
-        $total = (int)$countStmt
+        $total = (int) $countStmt
             ->get_result()
             ->fetch_assoc()['total'];
 
@@ -686,18 +651,20 @@ class Song extends Model
 
         /*
     |--------------------------------------------------------------------------
-    | Popular Songs
+    | Latest Songs
     |--------------------------------------------------------------------------
     */
 
         $stmt = $this->db->prepare("
-        SELECT id
-        FROM songs
-        WHERE is_active = 1
-        AND deleted_at IS NULL
-        ORDER BY play_count DESC, id DESC
-        LIMIT ? OFFSET ?
-    ");
+            SELECT id
+            FROM songs
+            WHERE is_active = 1
+            AND deleted_at IS NULL
+            ORDER BY
+                release_date DESC,
+                id DESC
+            LIMIT ? OFFSET ?
+        ");
 
         $stmt->bind_param(
             "ii",
@@ -713,9 +680,90 @@ class Song extends Model
 
         while ($row = $result->fetch_assoc()) {
 
-            $song = $this->find(
-                (int)$row['id']
-            );
+            $song = $this->find((int) $row['id']);
+
+            if ($song !== null) {
+                $tracks[] = $song;
+            }
+        }
+
+        $stmt->close();
+
+        return [
+            'tracks' => $tracks,
+
+            'pagination' => $this->pagination(
+                $page,
+                $limit,
+                $total
+            )
+        ];
+    }
+
+    public function popular(
+        int $page = 1,
+        int $limit = 20
+    ): array {
+        $page = max(1, $page);
+        $limit = max(1, min($limit, MAX_LIMIT));
+
+        $offset = ($page - 1) * $limit;
+
+        /*
+    |--------------------------------------------------------------------------
+    | Total
+    |--------------------------------------------------------------------------
+    */
+
+        $countStmt = $this->db->prepare("
+            SELECT COUNT(*) AS total
+            FROM songs
+            WHERE is_active = 1
+            AND deleted_at IS NULL
+        ");
+
+        $countStmt->execute();
+
+        $total = (int) $countStmt
+            ->get_result()
+            ->fetch_assoc()['total'];
+
+        $countStmt->close();
+
+        /*
+    |--------------------------------------------------------------------------
+    | Popular
+    |--------------------------------------------------------------------------
+    */
+
+        $stmt = $this->db->prepare("
+            SELECT id
+            FROM songs
+            WHERE is_active = 1
+            AND deleted_at IS NULL
+            ORDER BY
+                play_count DESC,
+                like_count DESC,
+                download_count DESC,
+                id DESC
+            LIMIT ? OFFSET ?
+        ");
+
+        $stmt->bind_param(
+            "ii",
+            $limit,
+            $offset
+        );
+
+        $stmt->execute();
+
+        $result = $stmt->get_result();
+
+        $tracks = [];
+
+        while ($row = $result->fetch_assoc()) {
+
+            $song = $this->find((int) $row['id']);
 
             if ($song !== null) {
                 $tracks[] = $song;

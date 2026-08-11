@@ -40,14 +40,14 @@ class HomeController extends Controller
             }
         }
         
-        $artists = $this->artist->allPaginated(1, 10);
-        $albums = $this->album->allPaginated(1, 10);
+        $artists = $this->artist->allPaginated(1, 5);
+        $albums = $this->album->allPaginated(1, 5);
         
         $this->success([
             // 'banner' => $this->banners(),
             'trending' => $this->song->trending(1, 5),
             'popular' => $this->song->popular(1, 5),
-            'new_release' => $this->song->latest(5),
+            'new_release' => $this->song->latest(1, 5),
             'recommended' => $this->song->recommended($userId, 1, 5),
             'top_artists' => $artists['data'],
             'top_albums' => $albums['data'],
