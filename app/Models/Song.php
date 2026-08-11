@@ -920,201 +920,170 @@ class Song extends Model
 
     public function recommended(
         int $userId,
-        int $page = 1,
-        int $limit = 20
+        int $limit = 10
     ): array {
-        $page = max(1, $page);
+
         $limit = max(1, min($limit, MAX_LIMIT));
-
-        /*
-    |--------------------------------------------------------------------------
-    | If User Is Not Logged In
-    |--------------------------------------------------------------------------
-    */
-
-        if ($userId <= 0) {
-            return $this->popular(
-                $page,
-                $limit
-            );
-        }
-
-        $offset = ($page - 1) * $limit;
-
-        /*
-    |--------------------------------------------------------------------------
-    | Get User's Favorite Artists
-    |--------------------------------------------------------------------------
-    */
-
-        $stmt = $this->db->prepare("
-        SELECT DISTINCT sa.artist_id
-        FROM favorites f
-
-        INNER JOIN song_artists sa
-            ON sa.song_id = f.song_id
-
-        WHERE f.user_id = ?
-    ");
-
-        $stmt->bind_param(
-            "i",
-            $userId
-        );
-
-        $stmt->execute();
-
-        $result = $stmt->get_result();
-
-        $artistIds = [];
-
-        while ($row = $result->fetch_assoc()) {
-            $artistIds[] = (int)$row['artist_id'];
-        }
-
-        $stmt->close();
-
-        /*
-    |--------------------------------------------------------------------------
-    | No Favorite Artists
-    |--------------------------------------------------------------------------
-    */
-
-        if (empty($artistIds)) {
-            return $this->popular(
-                $page,
-                $limit
-            );
-        }
-
-        /*
-    |--------------------------------------------------------------------------
-    | Build Artist Placeholders
-    |--------------------------------------------------------------------------
-    */
-
-        $placeholders = implode(
-            ',',
-            array_fill(
-                0,
-                count($artistIds),
-                '?'
-            )
-        );
-
-        $types = str_repeat(
-            'i',
-            count($artistIds)
-        );
-
-        /*
-    |--------------------------------------------------------------------------
-    | Total Recommended Songs
-    |--------------------------------------------------------------------------
-    */
-
-        $sql = "
-        SELECT COUNT(DISTINCT s.id) AS total
-
-        FROM songs s
-
-        INNER JOIN song_artists sa
-            ON sa.song_id = s.id
-
-        WHERE sa.artist_id IN ($placeholders)
-
-        AND s.is_active = 1
-        AND s.deleted_at IS NULL
-    ";
-
-        $stmt = $this->db->prepare($sql);
-
-        $params = [$types];
-
-        foreach ($artistIds as $id) {
-            $params[] = $id;
-        }
-
-        $this->bindDynamic(
-            $stmt,
-            $params
-        );
-
-        $stmt->execute();
-
-        $total = (int)$stmt
-            ->get_result()
-            ->fetch_assoc()['total'];
-
-        $stmt->close();
 
         /*
     |--------------------------------------------------------------------------
     | Recommended Songs
     |--------------------------------------------------------------------------
+    |
+    | Score:
+    |   Followed artist  = +5
+    |   Favorite artist  = +3
+    |   History artist   = +2 per listen
+    |
     */
 
-        $sql = "
-        SELECT DISTINCT s.id
+        $stmt = $this->db->prepare("
+        SELECT
+            s.id,
+
+            (
+                COALESCE(follow_score.score, 0)
+                +
+                COALESCE(favorite_score.score, 0)
+                +
+                COALESCE(history_score.score, 0)
+            ) AS recommendation_score
 
         FROM songs s
 
         INNER JOIN song_artists sa
             ON sa.song_id = s.id
 
-        WHERE sa.artist_id IN ($placeholders)
 
-        AND s.is_active = 1
-        AND s.deleted_at IS NULL
+        /*
+        |--------------------------------------------------------------------------
+        | Followed artists
+        |--------------------------------------------------------------------------
+        */
+
+        LEFT JOIN (
+            SELECT
+                artist_id,
+                5 AS score
+
+            FROM artist_follows
+
+            WHERE user_id = ?
+        ) follow_score
+
+            ON follow_score.artist_id = sa.artist_id
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Favorite artists
+        |--------------------------------------------------------------------------
+        */
+
+        LEFT JOIN (
+            SELECT
+                sa2.artist_id,
+                3 AS score
+
+            FROM favorites f
+
+            INNER JOIN song_artists sa2
+                ON sa2.song_id = f.song_id
+
+            WHERE f.user_id = ?
+
+            GROUP BY sa2.artist_id
+        ) favorite_score
+
+            ON favorite_score.artist_id = sa.artist_id
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | History artists
+        |--------------------------------------------------------------------------
+        */
+
+        LEFT JOIN (
+            SELECT
+                sa3.artist_id,
+                COUNT(*) * 2 AS score
+
+            FROM history h
+
+            INNER JOIN song_artists sa3
+                ON sa3.song_id = h.song_id
+
+            WHERE h.user_id = ?
+
+            GROUP BY sa3.artist_id
+        ) history_score
+
+            ON history_score.artist_id = sa.artist_id
+
+
+        WHERE
+            s.is_active = 1
+            AND s.deleted_at IS NULL
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Must have some recommendation score
+        |--------------------------------------------------------------------------
+        */
+
+        AND (
+            COALESCE(follow_score.score, 0)
+            +
+            COALESCE(favorite_score.score, 0)
+            +
+            COALESCE(history_score.score, 0)
+        ) > 0
+
+
+        GROUP BY s.id
+
 
         ORDER BY
+            recommendation_score DESC,
             s.play_count DESC,
             s.release_date DESC,
             s.id DESC
 
-        LIMIT ? OFFSET ?
-    ";
 
-        $stmt = $this->db->prepare($sql);
+        LIMIT ?
+    ");
 
-        $params = [$types];
-
-        foreach ($artistIds as $id) {
-            $params[] = $id;
-        }
-
-        $params[] = $limit;
-        $params[] = $offset;
-
-        $params[0] .= 'ii';
-
-        $this->bindDynamic(
-            $stmt,
-            $params
+        $stmt->bind_param(
+            "iiii",
+            $userId,
+            $userId,
+            $userId,
+            $limit
         );
 
         $stmt->execute();
 
         $result = $stmt->get_result();
 
-        $songIds = [];
+        $tracks = [];
 
         while ($row = $result->fetch_assoc()) {
-            $songIds[] = (int)$row['id'];
+
+            $song = $this->find(
+                (int)$row['id']
+            );
+
+            if ($song !== null) {
+                $tracks[] = $song;
+            }
         }
 
         $stmt->close();
 
-        $tracks = $this->cardsByIds($songIds);
-
         return [
-            'tracks' => $tracks,
-
-            'pagination' => $this->pagination(
-                $page,
-                $limit,
-                $total
-            )
+            'tracks' => $tracks
         ];
     }
 

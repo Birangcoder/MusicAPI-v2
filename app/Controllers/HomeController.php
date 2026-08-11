@@ -43,7 +43,7 @@ class HomeController extends Controller
         $trending = $this->song->trending(1, 5);
         $popular = $this->song->popular(1, 5);
         $latest = $this->song->latest(1, 5);
-        $recommended = $this->song->recommended($userId, 1, 5);
+        $recommended = $this->song->recommended($userId, 5);
 
         $this->success([
             // 'banner' => $this->banners(),
