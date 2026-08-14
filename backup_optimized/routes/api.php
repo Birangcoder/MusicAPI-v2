@@ -47,7 +47,6 @@ $router->get('songs/latest', [SongController::class, 'latest']);
 $router->get('songs/new', [SongController::class, 'latest']);
 $router->get('songs/recommended', [SongController::class, 'recommended']);
 
-$router->post('songs/{id}/play', [SongController::class, 'play']);
 $router->get('songs/{id}', [SongController::class, 'show']);
 
 /*
@@ -57,7 +56,6 @@ $router->get('songs/{id}', [SongController::class, 'show']);
 */
 
 $router->get('artists', [ArtistController::class, 'index']);
-$router->get('artists/{id}', [ArtistController::class, 'show']);
 $router->get('artists/{id}/tracks', [ArtistController::class, 'tracks']);
 $router->get('artists/{id}/albums', [ArtistController::class, 'albums']);
 
@@ -68,8 +66,6 @@ $router->get('artists/{id}/albums', [ArtistController::class, 'albums']);
 */
 
 $router->get('albums', [AlbumController::class, 'index']);
-$router->get('albums/search', [AlbumController::class, 'search']);
-$router->get('albums/{id}', [AlbumController::class, 'show']);
 $router->get('albums/{id}/tracks', [AlbumController::class, 'tracks']);
 
 /*
@@ -106,8 +102,6 @@ $router->delete('favorites/{id}', [FavoriteController::class, 'destroy']);
 
 $router->get('history', [HistoryController::class, 'index']);
 $router->post('history', [HistoryController::class, 'store']);
-$router->delete('history/{id}', [HistoryController::class, 'destroy']);
-$router->delete('history', [HistoryController::class, 'clear']);
 
 /*
 |--------------------------------------------------------------------------

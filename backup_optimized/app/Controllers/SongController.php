@@ -255,7 +255,6 @@ class SongController extends Controller
     public function play(int $id): void
     {
         $userId = $this->userId();
-        $body = $this->body();
 
         $song = $this->song->find($id);
 
@@ -271,10 +270,7 @@ class SongController extends Controller
 
         $this->song->addHistory(
             $userId,
-            $id,
-            (int)($body['play_duration'] ?? 0),
-            (bool)($body['completed'] ?? false),
-            $_SERVER['HTTP_USER_AGENT'] ?? null
+            $id
         );
 
         $this->song->addView(

@@ -24,6 +24,9 @@ define('JWT_SECRET', 'CHANGE_THIS_TO_RANDOM_64_CHAR_SECRET_KEY');
 define('JWT_ALGORITHM', 'HS256');
 define('JWT_EXPIRE', 60 * 60 * 24 * 7);
 
+define('UPLOAD_SONG_PATH', dirname(__DIR__) . '/uploads/songs/');
+define('UPLOAD_COVER_PATH', dirname(__DIR__) . '/uploads/covers/');
+define('UPLOAD_ARTIST_PATH', dirname(__DIR__) . '/uploads/artists/');
 
 define('DEFAULT_LIMIT', 20);
 define('MAX_LIMIT', 100);

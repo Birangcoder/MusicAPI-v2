@@ -6,16 +6,16 @@ namespace App\Controllers;
 
 use App\Helpers\Response;
 use App\Middleware\AuthMiddleware;
-use App\Models\History;
+use App\Models\Favorite;
 use App\Core\Controller;
 
-class HistoryController extends Controller
+class FavoriteController extends Controller
 {
-    private History $history;
+    private Favorite $favorite;
 
     public function __construct()
     {
-        $this->history = new History();
+        $this->favorite = new Favorite();
     }
 
     public function index(): void
@@ -23,7 +23,7 @@ class HistoryController extends Controller
         $userId = $this->userId();
 
         $this->success(
-            $this->history->all(
+            $this->favorite->all(
                 $userId,
                 (int)($_GET['page'] ?? 1),
                 (int)($_GET['limit'] ?? DEFAULT_LIMIT)
@@ -47,46 +47,29 @@ class HistoryController extends Controller
             );
         }
 
-        $this->history->add(
+        $this->favorite->add(
             $userId,
-            (int)$body['song_id'],
-            (int)($body['play_duration'] ?? 0),
-            (bool)($body['completed'] ?? false),
-            isset($body['device'])
-                ? (string)$body['device']
-                : null
+            (int)$body['song_id']
         );
 
         Response::created(
             null,
-            "History added."
+            "Song added to favorites."
         );
     }
 
-    public function destroy(int $historyId): void
+    public function destroy(int $songId): void
     {
         $userId = $this->userId();
 
-        $this->history->remove(
+        $this->favorite->remove(
             $userId,
-            $historyId
+            $songId
         );
 
         $this->success(
             null,
-            "History deleted."
-        );
-    }
-
-    public function clear(): void
-    {
-        $userId = $this->userId();
-
-        $this->history->clear($userId);
-
-        $this->success(
-            null,
-            "History cleared."
+            "Song removed from favorites."
         );
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Helpers\Response;
 use App\Middleware\AuthMiddleware;
 use App\Models\Song;
 use App\Models\Artist;
@@ -42,9 +43,10 @@ class HomeController extends Controller
         $trending = $this->song->trending(1, 5);
         $popular = $this->song->popular(1, 5);
         $latest = $this->song->latest(1, 5);
-        $recommended = $this->song->recommended($userId, 1, 5);
+        $recommended = $this->song->recommended($userId, 5);
 
         $this->success([
+            // 'banner' => $this->banners(),
             'trending' => $trending['tracks'],
             'popular' => $popular['tracks'],
             'new_release' => $latest['tracks'],
@@ -53,6 +55,44 @@ class HomeController extends Controller
             'top_albums' => $this->album->homeCards(5),
             'continue_listening' => $this->continueListening($userId, 5)
         ]);
+    }
+
+    private function banners(): array
+    {
+        $db = \App\Core\Database::getInstance()->connection();
+
+        $result = $db->query("
+            SELECT
+                id,
+                title,
+                subtitle,
+                image_url,
+                redirect_type,
+                redirect_id,
+                external_url
+            FROM banners
+            WHERE
+                is_active=1
+            AND
+                (
+                    start_date IS NULL
+                    OR start_date<=NOW()
+                )
+            AND
+                (
+                    end_date IS NULL
+                    OR end_date>=NOW()
+                )
+            ORDER BY sort_order ASC
+        ");
+
+        $banners = [];
+
+        while ($row = $result->fetch_assoc()) {
+            $banners[] = $row;
+        }
+
+        return $banners;
     }
 
     private function continueListening(

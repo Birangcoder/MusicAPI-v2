@@ -8,7 +8,7 @@ use App\Core\Database;
 use App\Core\Model;
 use App\Models\Song;
 
-class History extends Model
+class Favorite extends Model
 {
     public function all(
         int $userId,
@@ -21,12 +21,12 @@ class History extends Model
         $offset = ($page - 1) * $limit;
 
         // -----------------------------------------
-        // Total history
+        // Total favorites
         // -----------------------------------------
 
         $stmt = $this->db->prepare("
         SELECT COUNT(*) AS total
-        FROM history
+        FROM favorites
         WHERE user_id = ?
     ");
 
@@ -40,20 +40,17 @@ class History extends Model
         $stmt->close();
 
         // -----------------------------------------
-        // History records
+        // Favorite records
         // -----------------------------------------
 
         $stmt = $this->db->prepare("
         SELECT
             id,
             song_id,
-            played_at,
-            play_duration,
-            completed,
-            device
-        FROM history
+            created_at
+        FROM favorites
         WHERE user_id = ?
-        ORDER BY played_at DESC
+        ORDER BY created_at DESC
         LIMIT ? OFFSET ?
     ");
 
@@ -82,18 +79,15 @@ class History extends Model
 
         $songsById = (new Song())->cardsByIds($songIds);
         $songsById = array_column($songsById, null, 'id');
-        $history = [];
+        $favorites = [];
 
         foreach ($rows as $row) {
             if (!isset($songsById[$row['song_id']])) {
                 continue;
             }
-            $history[] = [
+            $favorites[] = [
                 'id' => $row['id'],
-                'played_at' => $row['played_at'],
-                'play_duration' => (int)$row['play_duration'],
-                'completed' => (bool)$row['completed'],
-                'device' => $row['device'],
+                'created_at' => $row['created_at'],
                 'song' => $songsById[$row['song_id']]
             ];
         }
@@ -103,7 +97,7 @@ class History extends Model
             : 0;
 
         return [
-            'data' => $history,
+            'data' => $favorites,
 
             'pagination' => [
                 'page' => $page,
@@ -116,85 +110,77 @@ class History extends Model
         ];
     }
 
-    public function add(
-        int $userId,
-        int $songId,
-        int $playDuration = 0,
-        bool $completed = false,
-        ?string $device = null
-    ): bool {
-
-        $stmt = $this->db->prepare("
-            INSERT INTO history
-            (
-                user_id,
-                song_id,
-                play_duration,
-                completed,
-                device
-            )
-            VALUES
-            (
-                ?,?,?,?,?
-            )
-        ");
-
-        $completed = $completed ? 1 : 0;
-
-        $stmt->bind_param(
-            "iiiis",
-            $userId,
-            $songId,
-            $playDuration,
-            $completed,
-            $device
-        );
-
-        $status = $stmt->execute();
-
-        $stmt->close();
-
-        return $status;
-    }
-
-    public function clear(int $userId): bool
+    public function exists(int $userId, int $songId): bool
     {
         $stmt = $this->db->prepare("
-            DELETE
-            FROM history
+            SELECT id
+            FROM favorites
             WHERE user_id=?
-        ");
-
-        $stmt->bind_param(
-            "i",
-            $userId
-        );
-
-        $status = $stmt->execute();
-
-        $stmt->close();
-
-        return $status;
-    }
-
-    public function remove(
-        int $userId,
-        int $historyId
-    ): bool {
-
-        $stmt = $this->db->prepare("
-            DELETE
-            FROM history
-            WHERE
-                id=?
-            AND
-                user_id=?
+            AND song_id=?
+            LIMIT 1
         ");
 
         $stmt->bind_param(
             "ii",
-            $historyId,
-            $userId
+            $userId,
+            $songId
+        );
+
+        $stmt->execute();
+
+        $stmt->store_result();
+
+        $exists = $stmt->num_rows > 0;
+
+        $stmt->close();
+
+        return $exists;
+    }
+
+    public function add(int $userId, int $songId): bool
+    {
+        if ($this->exists($userId, $songId)) {
+            return true;
+        }
+
+        $stmt = $this->db->prepare("
+            INSERT INTO favorites
+            (
+                user_id,
+                song_id
+            )
+            VALUES
+            (
+                ?,
+                ?
+            )
+        ");
+
+        $stmt->bind_param(
+            "ii",
+            $userId,
+            $songId
+        );
+
+        $status = $stmt->execute();
+
+        $stmt->close();
+
+        return $status;
+    }
+
+    public function remove(int $userId, int $songId): bool
+    {
+        $stmt = $this->db->prepare("
+            DELETE FROM favorites
+            WHERE user_id=?
+            AND song_id=?
+        ");
+
+        $stmt->bind_param(
+            "ii",
+            $userId,
+            $songId
         );
 
         $status = $stmt->execute();
@@ -208,14 +194,11 @@ class History extends Model
     {
         $stmt = $this->db->prepare("
             SELECT COUNT(*) total
-            FROM history
+            FROM favorites
             WHERE user_id=?
         ");
 
-        $stmt->bind_param(
-            "i",
-            $userId
-        );
+        $stmt->bind_param("i", $userId);
 
         $stmt->execute();
 

@@ -120,8 +120,7 @@ class History extends Model
         int $userId,
         int $songId,
         int $playDuration = 0,
-        bool $completed = false,
-        ?string $device = null
+        bool $completed = false
     ): bool {
 
         $stmt = $this->db->prepare("
@@ -130,24 +129,22 @@ class History extends Model
                 user_id,
                 song_id,
                 play_duration,
-                completed,
-                device
+                completed
             )
             VALUES
             (
-                ?,?,?,?,?
+                ?,?,?,?
             )
         ");
 
         $completed = $completed ? 1 : 0;
 
         $stmt->bind_param(
-            "iiiis",
+            "iiii",
             $userId,
             $songId,
             $playDuration,
-            $completed,
-            $device
+            $completed
         );
 
         $status = $stmt->execute();

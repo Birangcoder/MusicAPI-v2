@@ -270,8 +270,6 @@ class Album extends Model
                 s.language,
                 s.duration_seconds,
                 s.release_date,
-                sa.track_number,
-                sa.disc_number,
                 s.play_count,
                 s.like_count,
                 s.download_count
@@ -286,8 +284,8 @@ class Album extends Model
             AND s.deleted_at IS NULL
 
             ORDER BY
-                sa.disc_number ASC,
-                sa.track_number ASC,
+                s.disc_number ASC,
+                s.track_number ASC,
                 s.id ASC
         ");
 
@@ -317,13 +315,7 @@ class Album extends Model
 
                 'metadata' => [
                     'language' => $track['language'],
-                    'release_date' => $track['release_date'],
-                    'track_number' => $track['track_number'] !== null
-                        ? (int)$track['track_number']
-                        : null,
-                    'disc_number' => $track['disc_number'] !== null
-                        ? (int)$track['disc_number']
-                        : null
+                    'release_date' => $track['release_date']
                 ],
 
                 'statistics' => [
@@ -490,8 +482,6 @@ class Album extends Model
                 s.audio_url,
                 s.language,
                 s.duration_seconds,
-                sa.track_number,
-                sa.disc_number,
                 s.play_count,
                 s.like_count,
                 s.download_count
@@ -506,8 +496,8 @@ class Album extends Model
             AND s.deleted_at IS NULL
 
             ORDER BY
-                sa.disc_number ASC,
-                sa.track_number ASC,
+                s.disc_number ASC,
+                s.track_number ASC,
                 s.id ASC
         ");
 
@@ -536,13 +526,7 @@ class Album extends Model
                 ],
 
                 'metadata' => [
-                    'language' => $row['language'],
-                    'track_number' => $row['track_number'] !== null
-                        ? (int)$row['track_number']
-                        : null,
-                    'disc_number' => $row['disc_number'] !== null
-                        ? (int)$row['disc_number']
-                        : null
+                    'language' => $row['language']
                 ],
 
                 'statistics' => [

@@ -80,8 +80,6 @@ class Song extends Model
             id,
             title,
             slug,
-            description,
-            lyrics,
             cover_url,
             audio_url,
             language,
@@ -93,8 +91,6 @@ class Song extends Model
             is_active
         FROM songs
         WHERE id = ?
-        AND is_active = 1
-        AND deleted_at IS NULL
         LIMIT 1
     ");
 
@@ -181,9 +177,7 @@ class Song extends Model
             a.cover_url,
             a.release_date,
             a.album_type,
-            a.label,
-            sa.track_number,
-            sa.disc_number
+            a.label
         FROM song_albums sa
 
         INNER JOIN albums a
@@ -204,16 +198,6 @@ class Song extends Model
         $album = $result->fetch_assoc();
 
         $stmt->close();
-
-        if ($album) {
-            $album['id'] = (int)$album['id'];
-            $album['track_number'] = $album['track_number'] !== null
-                ? (int)$album['track_number']
-                : null;
-            $album['disc_number'] = $album['disc_number'] !== null
-                ? (int)$album['disc_number']
-                : null;
-        }
 
         /*
     |--------------------------------------------------------------------------
@@ -259,8 +243,6 @@ class Song extends Model
             'id' => (int)$song['id'],
             'title' => $song['title'],
             'slug' => $song['slug'],
-            'description' => $song['description'],
-            'lyrics' => $song['lyrics'],
 
             'media' => [
                 'audio_url' => $song['audio_url'],
@@ -891,299 +873,217 @@ class Song extends Model
 
     public function create(array $data): int
     {
-        $this->db->begin_transaction();
+        $stmt = $this->db->prepare("
+            INSERT INTO songs
+            (
+                title,
+                slug,
+                description,
+                lyrics,
+                audio_url,
+                cover_url,
+                duration_seconds,
+                language,
+                release_date,
+                track_number,
+                disc_number
+            )
+            VALUES
+            (
+                ?,?,?,?,?,?,?,?,?,?,?
+            )
+        ");
 
-        try {
-            $stmt = $this->db->prepare("
-                INSERT INTO songs
-                (
-                    title,
-                    slug,
-                    description,
-                    lyrics,
-                    audio_url,
-                    cover_url,
-                    duration_seconds,
-                    language,
-                    release_date,
-                    is_explicit,
-                    is_active
-                )
-                VALUES
-                (?,?,?,?,?,?,?,?,?,?,?)
-            ");
+        $stmt->bind_param(
+            "sssssssiiii",
+            $data['title'],
+            $data['slug'],
+            $data['description'],
+            $data['lyrics'],
+            $data['audio_url'],
+            $data['cover_url'],
+            $data['duration_seconds'],
+            $data['language'],
+            $data['release_date'],
+            $data['track_number'],
+            $data['disc_number']
+        );
 
-            $isExplicit = (int)($data['is_explicit'] ?? 0);
-            $isActive = (int)($data['is_active'] ?? 1);
+        $stmt->execute();
 
-            $stmt->bind_param(
-                "ssssssissii",
-                $data['title'],
-                $data['slug'],
-                $data['description'],
-                $data['lyrics'],
-                $data['audio_url'],
-                $data['cover_url'],
-                $data['duration_seconds'],
-                $data['language'],
-                $data['release_date'],
-                $isExplicit,
-                $isActive
-            );
+        $id = $stmt->insert_id;
 
-            $stmt->execute();
-            $songId = (int)$stmt->insert_id;
-            $stmt->close();
+        $stmt->close();
 
-            // Track/disc numbers belong to song_albums, not songs.
-            if (!empty($data['album_id'])) {
-                $albumId = (int)$data['album_id'];
-                $trackNumber = max(1, (int)($data['track_number'] ?? 1));
-                $discNumber = max(1, (int)($data['disc_number'] ?? 1));
-
-                $stmt = $this->db->prepare("
-                    INSERT INTO song_albums
-                    (
-                        song_id,
-                        album_id,
-                        track_number,
-                        disc_number
-                    )
-                    VALUES (?,?,?,?)
-                ");
-
-                $stmt->bind_param(
-                    "iiii",
-                    $songId,
-                    $albumId,
-                    $trackNumber,
-                    $discNumber
-                );
-
-                $stmt->execute();
-                $stmt->close();
-            }
-
-            $this->db->commit();
-
-            return $songId;
-        } catch (\Throwable $e) {
-            $this->db->rollback();
-            throw $e;
-        }
+        return $id;
     }
 
     public function recommended(
         int $userId,
-        int $page = 1,
         int $limit = 10
     ): array {
-        $page = max(1, $page);
+
         $limit = max(1, min($limit, MAX_LIMIT));
 
-        if ($userId <= 0) {
-            return [
-                'tracks' => [],
-                'pagination' => $this->pagination($page, $limit, 0)
-            ];
-        }
+        /*
+    |--------------------------------------------------------------------------
+    | Recommended Songs
+    |--------------------------------------------------------------------------
+    |
+    | Score:
+    |   Followed artist  = +5
+    |   Favorite artist  = +3
+    |   History artist   = +2 per listen
+    |
+    */
 
-        $offset = ($page - 1) * $limit;
+        $stmt = $this->db->prepare("
+        SELECT
+            s.id,
+
+            (
+                COALESCE(follow_score.score, 0)
+                +
+                COALESCE(favorite_score.score, 0)
+                +
+                COALESCE(history_score.score, 0)
+            ) AS recommendation_score
+
+        FROM songs s
+
+        INNER JOIN song_artists sa
+            ON sa.song_id = s.id
+
 
         /*
         |--------------------------------------------------------------------------
-        | Recommendation rules
-        |--------------------------------------------------------------------------
-        |
-        | Followed artist        +5
-        | Artist from favorite  +3
-        | Artist from history   +2 per play
-        |
-        | Songs already listened to or favorited are excluded so this section
-        | does not simply duplicate Popular/Favorites.
+        | Followed artists
         |--------------------------------------------------------------------------
         */
 
-        $countStmt = $this->db->prepare("
-            SELECT COUNT(*) AS total
-            FROM songs s
-            WHERE s.is_active = 1
-            AND s.deleted_at IS NULL
-
-            AND NOT EXISTS (
-                SELECT 1
-                FROM favorites f
-                WHERE f.user_id = ?
-                AND f.song_id = s.id
-            )
-
-            AND NOT EXISTS (
-                SELECT 1
-                FROM history h
-                WHERE h.user_id = ?
-                AND h.song_id = s.id
-            )
-
-            AND (
-                EXISTS (
-                    SELECT 1
-                    FROM song_artists sa
-                    INNER JOIN artist_follows af
-                        ON af.artist_id = sa.artist_id
-                    WHERE sa.song_id = s.id
-                    AND af.user_id = ?
-                )
-
-                OR EXISTS (
-                    SELECT 1
-                    FROM song_artists sa
-                    INNER JOIN favorites f
-                        ON f.user_id = ?
-                    INNER JOIN song_artists fav_sa
-                        ON fav_sa.song_id = f.song_id
-                        AND fav_sa.artist_id = sa.artist_id
-                    WHERE sa.song_id = s.id
-                )
-
-                OR EXISTS (
-                    SELECT 1
-                    FROM song_artists sa
-                    INNER JOIN history h
-                        ON h.user_id = ?
-                    INNER JOIN song_artists hist_sa
-                        ON hist_sa.song_id = h.song_id
-                        AND hist_sa.artist_id = sa.artist_id
-                    WHERE sa.song_id = s.id
-                )
-            )
-        ");
-
-        $countStmt->bind_param(
-            "iiiii",
-            $userId,
-            $userId,
-            $userId,
-            $userId,
-            $userId
-        );
-
-        $countStmt->execute();
-
-        $total = (int)$countStmt
-            ->get_result()
-            ->fetch_assoc()['total'];
-
-        $countStmt->close();
-
-        if ($total === 0) {
-            return [
-                'tracks' => [],
-                'pagination' => $this->pagination($page, $limit, 0)
-            ];
-        }
-
-        $stmt = $this->db->prepare("
+        LEFT JOIN (
             SELECT
-                s.id,
+                artist_id,
+                5 AS score
 
-                (
-                    CASE WHEN EXISTS (
-                        SELECT 1
-                        FROM song_artists sa
-                        INNER JOIN artist_follows af
-                            ON af.artist_id = sa.artist_id
-                        WHERE sa.song_id = s.id
-                        AND af.user_id = ?
-                    )
-                    THEN 5 ELSE 0 END
+            FROM artist_follows
 
-                    +
+            WHERE user_id = ?
+        ) follow_score
 
-                    CASE WHEN EXISTS (
-                        SELECT 1
-                        FROM song_artists sa
-                        INNER JOIN favorites f
-                            ON f.user_id = ?
-                        INNER JOIN song_artists fav_sa
-                            ON fav_sa.song_id = f.song_id
-                            AND fav_sa.artist_id = sa.artist_id
-                        WHERE sa.song_id = s.id
-                    )
-                    THEN 3 ELSE 0 END
+            ON follow_score.artist_id = sa.artist_id
 
-                    +
 
-                    COALESCE((
-                        SELECT COUNT(DISTINCT h.id) * 2
-                        FROM history h
-                        INNER JOIN song_artists hist_sa
-                            ON hist_sa.song_id = h.song_id
-                        INNER JOIN song_artists current_sa
-                            ON current_sa.artist_id = hist_sa.artist_id
-                        WHERE h.user_id = ?
-                        AND current_sa.song_id = s.id
-                    ), 0)
-                ) AS recommendation_score
+        /*
+        |--------------------------------------------------------------------------
+        | Favorite artists
+        |--------------------------------------------------------------------------
+        */
 
-            FROM songs s
+        LEFT JOIN (
+            SELECT
+                sa2.artist_id,
+                3 AS score
 
-            WHERE s.is_active = 1
+            FROM favorites f
+
+            INNER JOIN song_artists sa2
+                ON sa2.song_id = f.song_id
+
+            WHERE f.user_id = ?
+
+            GROUP BY sa2.artist_id
+        ) favorite_score
+
+            ON favorite_score.artist_id = sa.artist_id
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | History artists
+        |--------------------------------------------------------------------------
+        */
+
+        LEFT JOIN (
+            SELECT
+                sa3.artist_id,
+                COUNT(*) * 2 AS score
+
+            FROM history h
+
+            INNER JOIN song_artists sa3
+                ON sa3.song_id = h.song_id
+
+            WHERE h.user_id = ?
+
+            GROUP BY sa3.artist_id
+        ) history_score
+
+            ON history_score.artist_id = sa.artist_id
+
+
+        WHERE
+            s.is_active = 1
             AND s.deleted_at IS NULL
 
-            AND NOT EXISTS (
-                SELECT 1
-                FROM favorites f
-                WHERE f.user_id = ?
-                AND f.song_id = s.id
-            )
 
-            AND NOT EXISTS (
-                SELECT 1
-                FROM history h
-                WHERE h.user_id = ?
-                AND h.song_id = s.id
-            )
+        /*
+        |--------------------------------------------------------------------------
+        | Must have some recommendation score
+        |--------------------------------------------------------------------------
+        */
 
-            HAVING recommendation_score > 0
+        AND (
+            COALESCE(follow_score.score, 0)
+            +
+            COALESCE(favorite_score.score, 0)
+            +
+            COALESCE(history_score.score, 0)
+        ) > 0
 
-            ORDER BY
-                recommendation_score DESC,
-                s.play_count DESC,
-                s.release_date DESC,
-                s.id DESC
 
-            LIMIT ? OFFSET ?
-        ");
+        GROUP BY s.id
+
+
+        ORDER BY
+            recommendation_score DESC,
+            s.play_count DESC,
+            s.release_date DESC,
+            s.id DESC
+
+
+        LIMIT ?
+    ");
 
         $stmt->bind_param(
-            "iiiiiii",
+            "iiii",
             $userId,
             $userId,
             $userId,
-            $userId,
-            $userId,
-            $limit,
-            $offset
+            $limit
         );
 
         $stmt->execute();
 
         $result = $stmt->get_result();
-        $songIds = [];
+
+        $tracks = [];
 
         while ($row = $result->fetch_assoc()) {
-            $songIds[] = (int)$row['id'];
+
+            $song = $this->find(
+                (int)$row['id']
+            );
+
+            if ($song !== null) {
+                $tracks[] = $song;
+            }
         }
 
         $stmt->close();
 
         return [
-            'tracks' => $this->cardsByIds($songIds),
-            'pagination' => $this->pagination(
-                $page,
-                $limit,
-                $total
-            )
+            'tracks' => $tracks
         ];
     }
 
@@ -1191,8 +1091,7 @@ class Song extends Model
         int $userId,
         int $songId,
         int $playDuration = 0,
-        bool $completed = false,
-        ?string $device = null
+        bool $completed = false
     ): void {
 
         $completed = $completed ? 1 : 0;
@@ -1203,22 +1102,20 @@ class Song extends Model
             user_id,
             song_id,
             play_duration,
-            completed,
-            device
+            completed
         )
         VALUES
         (
-            ?,?,?,?,?
+            ?,?,?,?
         )
     ");
 
         $stmt->bind_param(
-            "iiiis",
+            "iiii",
             $userId,
             $songId,
             $playDuration,
-            $completed,
-            $device
+            $completed
         );
 
         $stmt->execute();

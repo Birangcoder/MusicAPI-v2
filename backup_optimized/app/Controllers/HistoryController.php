@@ -51,10 +51,7 @@ class HistoryController extends Controller
             $userId,
             (int)$body['song_id'],
             (int)($body['play_duration'] ?? 0),
-            (bool)($body['completed'] ?? false),
-            isset($body['device'])
-                ? (string)$body['device']
-                : null
+            (bool)($body['completed'] ?? false)
         );
 
         Response::created(

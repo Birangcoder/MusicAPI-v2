@@ -36,7 +36,7 @@ class AuthController extends Controller
             ->validate();
 
         $stmt = $this->db->prepare(
-            "SELECT id FROM users WHERE email=? AND deleted_at IS NULL LIMIT 1"
+            "SELECT id FROM users WHERE email=? LIMIT 1"
         );
 
         $stmt->bind_param("s", $data['email']);
@@ -71,15 +71,6 @@ class AuthController extends Controller
         $id = $stmt->insert_id;
 
         $stmt->close();
-
-        // Create default settings for the new account.
-        $settingsStmt = $this->db->prepare("
-            INSERT INTO user_settings (user_id)
-            VALUES (?)
-        ");
-        $settingsStmt->bind_param("i", $id);
-        $settingsStmt->execute();
-        $settingsStmt->close();
 
         $token = JWT::encode([
             'user_id' => $id,
@@ -117,8 +108,6 @@ class AuthController extends Controller
                 is_premium
              FROM users
              WHERE email=?
-             AND deleted_at IS NULL
-             AND status=1
              LIMIT 1"
         );
 
@@ -142,14 +131,11 @@ class AuthController extends Controller
             Response::unauthorized("Invalid credentials.");
         }
 
-        $loginStmt = $this->db->prepare("
-            UPDATE users
-            SET last_login = NOW()
-            WHERE id = ?
-        ");
-        $loginStmt->bind_param("i", $user['id']);
-        $loginStmt->execute();
-        $loginStmt->close();
+        $this->db->query(
+            "UPDATE users
+             SET last_login=NOW()
+             WHERE id={$user['id']}"
+        );
 
         $token = JWT::encode([
             'user_id' => $user['id'],

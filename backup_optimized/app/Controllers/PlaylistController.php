@@ -20,18 +20,7 @@ class PlaylistController extends Controller
 
     public function tracks(int $id): void
     {
-        $userId = 0;
-
-        try {
-            $userId = $this->userId();
-        } catch (\Throwable $e) {
-            // Public playlists are available without authentication.
-        }
-
-        $playlist = $this->playlist->findWithTracks(
-            $id,
-            $userId
-        );
+        $playlist = $this->playlist->findWithTracks($id);
 
         if ($playlist === null) {
             $this->error('Playlist not found', 404);

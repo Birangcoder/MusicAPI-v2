@@ -74,7 +74,7 @@ class Playlist extends Model
         ];
     }
 
-    public function findWithTracks(int $id, int $userId = 0): ?array
+    public function findWithTracks(int $id): ?array
     {
         // -----------------------------------------
         // Get playlist
@@ -93,14 +93,10 @@ class Playlist extends Model
             updated_at
         FROM playlists
         WHERE id = ?
-        AND (
-            is_public = 1
-            OR user_id = ?
-        )
         LIMIT 1
     ");
 
-        $stmt->bind_param("ii", $id, $userId);
+        $stmt->bind_param("i", $id);
         $stmt->execute();
 
         $playlist = $stmt->get_result()->fetch_assoc();
@@ -380,45 +376,6 @@ class Playlist extends Model
 
         $stmt->close();
 
-        // Do not add a song twice to the same playlist.
-        $check = $this->db->prepare("
-            SELECT 1
-            FROM playlist_songs
-            WHERE playlist_id = ?
-            AND song_id = ?
-            LIMIT 1
-        ");
-        $check->bind_param("ii", $playlistId, $songId);
-        $check->execute();
-        $check->store_result();
-
-        if ($check->num_rows > 0) {
-            $check->close();
-            return true;
-        }
-
-        $check->close();
-
-        // Make sure the song is available.
-        $songStmt = $this->db->prepare("
-            SELECT 1
-            FROM songs
-            WHERE id = ?
-            AND is_active = 1
-            AND deleted_at IS NULL
-            LIMIT 1
-        ");
-        $songStmt->bind_param("i", $songId);
-        $songStmt->execute();
-        $songStmt->store_result();
-
-        if ($songStmt->num_rows === 0) {
-            $songStmt->close();
-            return false;
-        }
-
-        $songStmt->close();
-
         $stmt = $this->db->prepare("
             INSERT INTO playlist_songs
             (
@@ -426,7 +383,10 @@ class Playlist extends Model
                 song_id,
                 position
             )
-            VALUES (?,?,?)
+            VALUES
+            (
+                ?,?,?
+            )
         ");
 
         $stmt->bind_param(
@@ -437,18 +397,8 @@ class Playlist extends Model
         );
 
         $status = $stmt->execute();
-        $stmt->close();
 
-        if ($status) {
-            $update = $this->db->prepare("
-                UPDATE playlists
-                SET total_songs = total_songs + 1
-                WHERE id = ?
-            ");
-            $update->bind_param("i", $playlistId);
-            $update->execute();
-            $update->close();
-        }
+        $stmt->close();
 
         return $status;
     }
@@ -474,21 +424,9 @@ class Playlist extends Model
         );
 
         $status = $stmt->execute();
-        $removed = $status && $stmt->affected_rows > 0;
 
         $stmt->close();
 
-        if ($removed) {
-            $update = $this->db->prepare("
-                UPDATE playlists
-                SET total_songs = GREATEST(total_songs - 1, 0)
-                WHERE id = ?
-            ");
-            $update->bind_param("i", $playlistId);
-            $update->execute();
-            $update->close();
-        }
-
-        return $removed;
+        return $status;
     }
 }

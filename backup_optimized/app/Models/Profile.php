@@ -26,7 +26,6 @@ class Profile extends Model
                 created_at
             FROM users
             WHERE id=?
-            AND deleted_at IS NULL
             LIMIT 1
         ");
 
