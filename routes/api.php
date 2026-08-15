@@ -47,7 +47,11 @@ $router->get('songs/latest', [SongController::class, 'latest']);
 $router->get('songs/new', [SongController::class, 'latest']);
 $router->get('songs/recommended', [SongController::class, 'recommended']);
 
+$router->get('songs/{id}/play', [SongController::class, 'play']);
 $router->post('songs/{id}/play', [SongController::class, 'play']);
+
+$router->post('/songs/{id}/progress', [SongController::class, 'progress']);
+
 $router->get('songs/{id}', [SongController::class, 'show']);
 
 /*

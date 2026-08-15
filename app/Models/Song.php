@@ -1187,6 +1187,42 @@ class Song extends Model
         ];
     }
 
+    public function updateProgress(
+        int $userId,
+        int $songId,
+        int $playDuration,
+        bool $completed
+    ): bool {
+        $stmt = $this->db->prepare("
+        UPDATE history
+        SET
+            play_duration = ?,
+            completed = ?
+        WHERE user_id = ?
+          AND song_id = ?
+        ORDER BY played_at DESC
+        LIMIT 1
+    ");
+
+        $completedValue = $completed ? 1 : 0;
+
+        $stmt->bind_param(
+            "iiii",
+            $playDuration,
+            $completedValue,
+            $userId,
+            $songId
+        );
+
+        $stmt->execute();
+
+        $updated = $stmt->affected_rows >= 0;
+
+        $stmt->close();
+
+        return $updated;
+    }
+
     public function addHistory(
         int $userId,
         int $songId,

@@ -287,4 +287,45 @@ class SongController extends Controller
             'Play recorded.'
         );
     }
+    
+    /*
+    |--------------------------------------------------------------------------
+    | POST /songs/{id}/progress
+    |--------------------------------------------------------------------------
+    */
+
+    public function progress(int $id): void
+    {
+        $userId = $this->userId();
+
+        if ($userId <= 0) {
+            $this->error('Authentication required', 401);
+            return;
+        }
+
+        $body = json_decode(
+            file_get_contents('php://input'),
+            true
+        );
+
+        $playDuration = (int)($body['play_duration'] ?? 0);
+        $completed = (bool)($body['completed'] ?? false);
+
+        if ($playDuration < 0) {
+            $playDuration = 0;
+        }
+
+        $this->song->updateProgress(
+            $userId,
+            $id,
+            $playDuration,
+            $completed
+        );
+
+        $this->success([
+            'song_id' => $id,
+            'play_duration' => $playDuration,
+            'completed' => $completed,
+        ]);
+    }
 }
