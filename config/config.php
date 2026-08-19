@@ -15,7 +15,18 @@ date_default_timezone_set('Asia/Kolkata');
 */
 $secretsFile = __DIR__ . '/secrets.php';
 
-if (file_exists($secretsFile)) {
+/*
+ * Local development:
+ * Load secrets.php only when Render/environment
+ * variables are not already available.
+ *
+ * On Render, DB_HOST is provided by Render,
+ * so secrets.php will NOT override it.
+ */
+if (
+    getenv('DB_HOST') === false &&
+    file_exists($secretsFile)
+) {
     require_once $secretsFile;
 }
 
@@ -82,7 +93,7 @@ define(
 
 define(
     'JWT_SECRET',
-    getenv('JWT_SECRET') ?: 'here_arrive_JWT_secret'
+    getenv('JWT_SECRET') ?: 'change-this-in-local-secrets'
 );
 
 define(
