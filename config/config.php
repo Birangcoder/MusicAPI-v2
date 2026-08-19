@@ -1,16 +1,17 @@
 <?php
 
 declare(strict_types=1);
+require_once __DIR__ . '/secrets.php';
 
 date_default_timezone_set('Asia/Kolkata');
 
-define('API_VERSION', 'v2');
+define('API_VERSION', 'v1');
 
 define('API_NAME', 'MusicAPI');
 
-define('APP_DEBUG', true);
-define('APP_NAME', 'MusicAPI V2');
-define('APP_ENV', 'development');
+define('APP_DEBUG', false);
+define('APP_NAME', 'MusicAPI');
+define('APP_ENV', 'production');
 
 define('APP_URL', 'http://localhost/MusicAPI-v2/');
 
@@ -18,7 +19,7 @@ define('DB_HOST', 'localhost');
 define('DB_PORT', 3306);
 define('DB_NAME', 'music_app_v2');
 define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_PASS', '');  
 
 define('JWT_SECRET', 'CHANGE_THIS_TO_RANDOM_64_CHAR_SECRET_KEY');
 define('JWT_ALGORITHM', 'HS256');
