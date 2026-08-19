@@ -12,7 +12,7 @@ define('APP_DEBUG', true);
 define('APP_NAME', 'MusicAPI V2');
 define('APP_ENV', 'development');
 
-define('APP_URL', 'http://localhost/MusicAPI-v2/public');
+define('APP_URL', 'http://localhost/MusicAPI-v2/');
 
 define('DB_HOST', 'localhost');
 define('DB_PORT', 3306);
