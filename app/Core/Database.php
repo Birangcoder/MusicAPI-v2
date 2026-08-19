@@ -22,7 +22,7 @@ class Database
             DB_USER,
             DB_PASS,
             DB_NAME,
-            // DB_PORT
+            (int) DB_PORT
         );
 
         $this->connection->set_charset('utf8mb4');

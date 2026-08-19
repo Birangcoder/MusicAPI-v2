@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y \
     git \
     unzip \
     libzip-dev \
-    && docker-php-ext-install pdo_mysql zip \
+    && docker-php-ext-install mysqli pdo_mysql zip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /var/www
