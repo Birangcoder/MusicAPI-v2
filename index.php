@@ -34,7 +34,7 @@ require 'routes/api.php';
 
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
-$base = '/';
+$base = '';
 
 if (strpos($uri, $base) === 0) {
     $uri = substr($uri, strlen($base));
