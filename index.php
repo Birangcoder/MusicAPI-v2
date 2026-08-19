@@ -34,9 +34,12 @@ require 'routes/api.php';
 
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
-$base = '/';
+// Get the directory where index.php is running.
+// Local: /MusicAPI-v2
+// Production: /
+$base = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
 
-if (strpos($uri, $base) === 0) {
+if ($base !== '' && $base !== '/' && str_starts_with($uri, $base)) {
     $uri = substr($uri, strlen($base));
 }
 

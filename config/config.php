@@ -35,7 +35,7 @@ define('APP_NAME', 'MusicAPI');
 
 define(
     'APP_ENV',
-    getenv('APP_ENV') ?: 'production'
+    'production'
 );
 
 define(
@@ -51,7 +51,7 @@ define(
 
 define(
     'DB_HOST',
-    getenv('DB_HOST') ?: ''
+    getenv('DB_HOST') ?: 'localhost'
 );
 
 define(
@@ -61,12 +61,12 @@ define(
 
 define(
     'DB_NAME',
-    getenv('DB_NAME') ?: ''
+    getenv('DB_NAME') ?: 'music_app_v2'
 );
 
 define(
     'DB_USER',
-    getenv('DB_USER') ?: ''
+    getenv('DB_USER') ?: 'root'
 );
 
 define(
@@ -82,7 +82,7 @@ define(
 
 define(
     'JWT_SECRET',
-    getenv('JWT_SECRET') ?: ''
+    getenv('JWT_SECRET') ?: 'here_arrive_JWT_secret'
 );
 
 define(
