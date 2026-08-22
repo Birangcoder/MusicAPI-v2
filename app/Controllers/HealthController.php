@@ -19,44 +19,29 @@ class HealthController extends Controller
     {
         $start = microtime(true);
 
-        /*
-        |--------------------------------------------------------------------------
-        | Database Connection
-        |--------------------------------------------------------------------------
-        */
-
-        $connectionStart = microtime(true);
-
         $db = Database::getInstance()->connection();
 
-        $connectionTime = microtime(true) - $connectionStart;
+        $connectionTime = microtime(true) - $start;
 
-        /*
-        |--------------------------------------------------------------------------
-        | Simple Query
-        |--------------------------------------------------------------------------
-        */
+        $queryTimes = [];
 
-        $queryStart = microtime(true);
+        for ($i = 0; $i < 10; $i++) {
+            $queryStart = microtime(true);
 
-        $result = $db->query("SELECT 1");
+            $db->query("SELECT 1");
 
-        $queryTime = microtime(true) - $queryStart;
-
-        /*
-        |--------------------------------------------------------------------------
-        | Total Time
-        |--------------------------------------------------------------------------
-        */
+            $queryTimes[] = round(
+                (microtime(true) - $queryStart) * 1000,
+                2
+            );
+        }
 
         $totalTime = microtime(true) - $start;
 
         $this->success([
-            'database' => [
-                'connection_time_ms' => round($connectionTime * 1000, 2),
-                'query_time_ms' => round($queryTime * 1000, 2),
-                'total_time_ms' => round($totalTime * 1000, 2),
-            ]
+            'connection_time_ms' => round($connectionTime * 1000, 2),
+            'query_times_ms' => $queryTimes,
+            'total_time_ms' => round($totalTime * 1000, 2),
         ]);
     }
 }
