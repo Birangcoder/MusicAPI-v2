@@ -11,9 +11,9 @@ use App\Controllers\PlaylistController;
 use App\Controllers\FavoriteController;
 use App\Controllers\HistoryController;
 use App\Controllers\SearchController;
-use App\Controllers\GenreController;
 use App\Controllers\ProfileController;
 use App\Controllers\SettingsController;
+use App\Controllers\HealthController;
 
 /*
 |--------------------------------------------------------------------------
@@ -154,3 +154,11 @@ $router->get('', function () {
         'status' => 'online'
     ]);
 });
+
+/*
+|--------------------------------------------------------------------------
+| db-test
+|--------------------------------------------------------------------------
+*/
+
+$router->get('db-test', [HealthController::class, 'dbTest']);
