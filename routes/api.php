@@ -161,4 +161,7 @@ $router->get('', function () {
 |--------------------------------------------------------------------------
 */
 
-$router->get('db-test', [HealthController::class, 'dbTest']);
+$router->get(
+    'db-test',
+    [HealthController::class, 'dbTest']
+);
