@@ -97,7 +97,7 @@ class Favorite extends Model
             : 0;
 
         return [
-            'tracks' => $favorites,
+            'tracks' => $songsById[$row['song_id']],
 
             'pagination' => [
                 'page' => $page,
