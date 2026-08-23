@@ -25,6 +25,8 @@ class HomeController extends Controller
 
     public function index(): void
     {
+        $totalStart = microtime(true);
+
         $userId = 0;
 
         $headers = function_exists('getallheaders')
@@ -39,19 +41,74 @@ class HomeController extends Controller
             }
         }
 
+        $times = [];
+
+        $start = microtime(true);
         $trending = $this->song->trending(1, 5);
+        $times['trending_ms'] = round(
+            (microtime(true) - $start) * 1000,
+            2
+        );
+
+        $start = microtime(true);
         $popular = $this->song->popular(1, 5);
+        $times['popular_ms'] = round(
+            (microtime(true) - $start) * 1000,
+            2
+        );
+
+        $start = microtime(true);
         $latest = $this->song->latest(1, 5);
-        $recommended = $this->song->recommended($userId, 1, 5);
+        $times['latest_ms'] = round(
+            (microtime(true) - $start) * 1000,
+            2
+        );
+
+        $start = microtime(true);
+        $recommended = $userId > 0
+            ? $this->song->recommended($userId, 1, 5)
+            : ['tracks' => []];
+
+        $times['recommended_ms'] = round(
+            (microtime(true) - $start) * 1000,
+            2
+        );
+
+        $start = microtime(true);
+        $topArtists = $this->artist->homeCards(5);
+        $times['artists_ms'] = round(
+            (microtime(true) - $start) * 1000,
+            2
+        );
+
+        $start = microtime(true);
+        $topAlbums = $this->album->homeCards(5);
+        $times['albums_ms'] = round(
+            (microtime(true) - $start) * 1000,
+            2
+        );
+
+        $start = microtime(true);
+        $continueListening = $this->continueListening($userId, 5);
+        $times['continue_listening_ms'] = round(
+            (microtime(true) - $start) * 1000,
+            2
+        );
+
+        $times['total_ms'] = round(
+            (microtime(true) - $totalStart) * 1000,
+            2
+        );
 
         $this->success([
             'trending' => $trending['tracks'],
             'popular' => $popular['tracks'],
             'new_release' => $latest['tracks'],
             'recommended' => $recommended['tracks'],
-            'top_artists' => $this->artist->homeCards(5),
-            'top_albums' => $this->album->homeCards(5),
-            'continue_listening' => $this->continueListening($userId, 5)
+            'top_artists' => $topArtists,
+            'top_albums' => $topAlbums,
+            'continue_listening' => $continueListening,
+            '_performance' => $times,
         ]);
     }
 
