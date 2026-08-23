@@ -86,8 +86,8 @@ class Favorite extends Model
                 continue;
             }
             $favorites[] = [
-                'id' => $row['id'],
-                'created_at' => $row['created_at'],
+                // 'id' => $row['id'],
+                // 'created_at' => $row['created_at'],
                 'song' => $songsById[$row['song_id']]
             ];
         }
@@ -97,7 +97,7 @@ class Favorite extends Model
             : 0;
 
         return [
-            'data' => $favorites,
+            'tracks' => $favorites,
 
             'pagination' => [
                 'page' => $page,
