@@ -20,9 +20,11 @@ class Favorite extends Model
 
         $offset = ($page - 1) * $limit;
 
-        // -----------------------------------------
-        // Total favorites
-        // -----------------------------------------
+        /*
+    |--------------------------------------------------------------------------
+    | Total favorites
+    |--------------------------------------------------------------------------
+    */
 
         $stmt = $this->db->prepare("
         SELECT COUNT(*) AS total
@@ -39,9 +41,11 @@ class Favorite extends Model
 
         $stmt->close();
 
-        // -----------------------------------------
-        // Favorite records
-        // -----------------------------------------
+        /*
+    |--------------------------------------------------------------------------
+    | Favorite records
+    |--------------------------------------------------------------------------
+    */
 
         $stmt = $this->db->prepare("
         SELECT
@@ -71,33 +75,75 @@ class Favorite extends Model
         while ($row = $result->fetch_assoc()) {
             $row['id'] = (int)$row['id'];
             $row['song_id'] = (int)$row['song_id'];
+
             $rows[] = $row;
             $songIds[] = (int)$row['song_id'];
         }
 
         $stmt->close();
 
+        /*
+    |--------------------------------------------------------------------------
+    | Songs
+    |--------------------------------------------------------------------------
+    */
+
+        if (empty($songIds)) {
+            return [
+                'tracks' => [],
+                'pagination' => [
+                    'page' => $page,
+                    'limit' => $limit,
+                    'total' => $total,
+                    'total_pages' => $total > 0
+                        ? (int)ceil($total / $limit)
+                        : 0,
+                    'has_next' => false,
+                    'has_previous' => $page > 1
+                ]
+            ];
+        }
+
         $songsById = (new Song())->cardsByIds($songIds);
-        $songsById = array_column($songsById, null, 'id');
+
+        $songsById = array_column(
+            $songsById,
+            null,
+            'id'
+        );
+
+        /*
+    |--------------------------------------------------------------------------
+    | Build favorites
+    |--------------------------------------------------------------------------
+    */
+
         $favorites = [];
 
         foreach ($rows as $row) {
-            if (!isset($songsById[$row['song_id']])) {
+
+            $songId = $row['song_id'];
+
+            if (!isset($songsById[$songId])) {
                 continue;
             }
-            $favorites[] = [
-                // 'id' => $row['id'],
-                // 'created_at' => $row['created_at'],
-                'song' => $songsById[$row['song_id']]
-            ];
+
+            // Return the same song object used by other song endpoints.
+            $favorites[] = $songsById[$songId];
         }
+
+        /*
+    |--------------------------------------------------------------------------
+    | Pagination
+    |--------------------------------------------------------------------------
+    */
 
         $totalPages = $total > 0
             ? (int)ceil($total / $limit)
             : 0;
 
         return [
-            'tracks' => $songsById[$row['song_id']],
+            'tracks' => $favorites,
 
             'pagination' => [
                 'page' => $page,
