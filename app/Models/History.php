@@ -20,9 +20,11 @@ class History extends Model
 
         $offset = ($page - 1) * $limit;
 
-        // -----------------------------------------
-        // Total history
-        // -----------------------------------------
+        /*
+    |--------------------------------------------------------------------------
+    | Total History
+    |--------------------------------------------------------------------------
+    */
 
         $stmt = $this->db->prepare("
         SELECT COUNT(*) AS total
@@ -39,18 +41,15 @@ class History extends Model
 
         $stmt->close();
 
-        // -----------------------------------------
-        // History records
-        // -----------------------------------------
+        /*
+    |--------------------------------------------------------------------------
+    | History Song IDs
+    |--------------------------------------------------------------------------
+    */
 
         $stmt = $this->db->prepare("
         SELECT
-            id,
-            song_id,
-            played_at,
-            play_duration,
-            completed,
-            device
+            song_id
         FROM history
         WHERE user_id = ?
         ORDER BY played_at DESC
@@ -68,42 +67,56 @@ class History extends Model
 
         $result = $stmt->get_result();
 
-        $rows = [];
         $songIds = [];
 
         while ($row = $result->fetch_assoc()) {
-            $row['id'] = (int)$row['id'];
-            $row['song_id'] = (int)$row['song_id'];
-            $rows[] = $row;
             $songIds[] = (int)$row['song_id'];
         }
 
         $stmt->close();
 
-        $songsById = (new Song())->cardsByIds($songIds);
-        $songsById = array_column($songsById, null, 'id');
-        $history = [];
+        /*
+    |--------------------------------------------------------------------------
+    | Get Songs Using Same Card Format
+    |--------------------------------------------------------------------------
+    */
 
-        foreach ($rows as $row) {
-            if (!isset($songsById[$row['song_id']])) {
-                continue;
+        $songs = empty($songIds)
+            ? []
+            : (new Song())->cardsByIds($songIds);
+
+        /*
+    |--------------------------------------------------------------------------
+    | Preserve History Order
+    |--------------------------------------------------------------------------
+    */
+
+        $songsById = array_column(
+            $songs,
+            null,
+            'id'
+        );
+
+        $tracks = [];
+
+        foreach ($songIds as $songId) {
+            if (isset($songsById[$songId])) {
+                $tracks[] = $songsById[$songId];
             }
-            $history[] = [
-                'id' => $row['id'],
-                'played_at' => $row['played_at'],
-                'play_duration' => (int)$row['play_duration'],
-                'completed' => (bool)$row['completed'],
-                'device' => $row['device'],
-                'song' => $songsById[$row['song_id']]
-            ];
         }
+
+        /*
+    |--------------------------------------------------------------------------
+    | Pagination
+    |--------------------------------------------------------------------------
+    */
 
         $totalPages = $total > 0
             ? (int)ceil($total / $limit)
             : 0;
 
         return [
-            'data' => $history,
+            'tracks' => $tracks,
 
             'pagination' => [
                 'page' => $page,

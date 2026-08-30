@@ -145,14 +145,10 @@ class HomeController extends Controller
 
         $result = $stmt->get_result();
 
-        $rows = [];
         $songIds = [];
 
         while ($row = $result->fetch_assoc()) {
-            $songId = (int) $row['song_id'];
-
-            $songIds[] = $songId;
-            $rows[$songId] = $row['last_played'];
+            $songIds[] = (int)$row['song_id'];
         }
 
         $stmt->close();
@@ -163,13 +159,26 @@ class HomeController extends Controller
 
         $songs = $this->song->cardsByIds($songIds);
 
-        foreach ($songs as &$song) {
-            $song['last_played'] =
-                $rows[$song['id']] ?? null;
+        /*
+    |--------------------------------------------------------------------------
+    | Preserve Continue Listening Order
+    |--------------------------------------------------------------------------
+    */
+
+        $songsById = array_column(
+            $songs,
+            null,
+            'id'
+        );
+
+        $tracks = [];
+
+        foreach ($songIds as $songId) {
+            if (isset($songsById[$songId])) {
+                $tracks[] = $songsById[$songId];
+            }
         }
 
-        unset($song);
-
-        return $songs;
+        return $tracks;
     }
 }
