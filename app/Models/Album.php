@@ -281,21 +281,21 @@ class Album extends Model
         );
 
         $stmt = $this->db->prepare("
-            SELECT
-                id,
-                title,
-                slug,
-                cover_url,
-                release_date,
-                album_type,
-                total_tracks
-            FROM albums
-            WHERE deleted_at IS NULL
-            ORDER BY
-                release_date DESC,
-                id DESC
-            LIMIT ?
-        ");
+        SELECT
+            id,
+            title,
+            slug,
+            cover_url,
+            release_date,
+            album_type,
+            total_tracks
+        FROM albums
+        WHERE deleted_at IS NULL
+        ORDER BY
+            release_date DESC,
+            id DESC
+        LIMIT ?
+    ");
 
         $stmt->bind_param(
             "i",
@@ -307,24 +307,110 @@ class Album extends Model
         $result = $stmt->get_result();
 
         $albums = [];
+        $albumIds = [];
 
         while ($row = $result->fetch_assoc()) {
-            $albums[] = [
-                'id' => (int) $row['id'],
+            $albumId = (int) $row['id'];
+
+            $albumIds[] = $albumId;
+
+            $albums[$albumId] = [
+                'id' => $albumId,
                 'title' => $row['title'],
                 'slug' => $row['slug'],
                 'cover_url' => $row['cover_url'],
+
                 'metadata' => [
                     'release_date' => $row['release_date'],
                     'album_type' => $row['album_type'],
                     'total_tracks' => (int) $row['total_tracks']
-                ]
+                ],
+
+                'artists' => []
             ];
         }
 
         $stmt->close();
 
-        return $albums;
+        /*
+     * Get artists for all albums in ONE query.
+     */
+        if ($albumIds !== []) {
+            $placeholders = implode(
+                ',',
+                array_fill(0, count($albumIds), '?')
+            );
+
+            $types = str_repeat(
+                'i',
+                count($albumIds)
+            );
+
+            $artistStmt = $this->db->prepare("
+                SELECT DISTINCT
+                    sal.album_id,
+                    ar.id,
+                    ar.name,
+                    ar.slug
+                FROM song_albums sal
+
+                INNER JOIN song_artists sa
+                    ON sa.song_id = sal.song_id
+
+                INNER JOIN artists ar
+                    ON ar.id = sa.artist_id
+
+                WHERE sal.album_id IN ($placeholders)
+                AND ar.deleted_at IS NULL
+
+                ORDER BY
+                    sal.album_id ASC,
+                    ar.name ASC
+            ");
+
+            $params = [$types];
+
+            foreach ($albumIds as $albumId) {
+                $params[] = $albumId;
+            }
+
+            $this->bindDynamic(
+                $artistStmt,
+                $params
+            );
+
+            $artistStmt->execute();
+
+            $artistResult = $artistStmt->get_result();
+
+            $seen = [];
+
+            while ($artist = $artistResult->fetch_assoc()) {
+                $albumId = (int) $artist['album_id'];
+                $artistId = (int) $artist['id'];
+
+                // Prevent duplicate artists
+                if (isset($seen[$albumId][$artistId])) {
+                    continue;
+                }
+
+                $seen[$albumId][$artistId] = true;
+
+                if (!isset($albums[$albumId])) {
+                    continue;
+                }
+
+                $albums[$albumId]['artists'][] = [
+                    'id' => $artistId,
+                    'name' => $artist['name'],
+                    'slug' => $artist['slug']
+                ];
+            }
+
+            $artistStmt->close();
+        }
+
+        return array_values($albums);
     }
 
     /**
