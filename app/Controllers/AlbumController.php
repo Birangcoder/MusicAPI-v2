@@ -35,14 +35,45 @@ class AlbumController extends Controller
 
     public function tracks(int $id): void
     {
-        $album = $this->album->findWithTracks($id);
+        $page = max(
+            1,
+            (int)($_GET['page'] ?? 1)
+        );
+
+        $limit = max(
+            1,
+            min(
+                (int)($_GET['limit'] ?? DEFAULT_LIMIT),
+                MAX_LIMIT
+            )
+        );
+
+        $album = $this->album->find($id);
 
         if (!$album) {
             $this->error('Album not found.', 404);
             return;
         }
 
-        $this->success($album);
+        $result = $this->album->tracks(
+            $id,
+            $page,
+            $limit
+        );
+
+        $this->success([
+            'album' => [
+                'id' => $album['id'],
+                'title' => $album['title'],
+                'slug' => $album['slug'],
+                'cover_url' => $album['cover_url'],
+                'artists' => $album['artists']
+            ],
+
+            'tracks' => $result['data'],
+
+            'pagination' => $result['pagination']
+        ]);
     }
 
     public function show(int $id): void
