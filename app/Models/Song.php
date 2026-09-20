@@ -1331,6 +1331,13 @@ class Song extends Model
                 s.duration_seconds,
                 s.language,
                 s.release_date,
+
+                EXISTS (
+                    SELECT 1
+                    FROM song_albums sal
+                    WHERE sal.song_id = s.id
+                ) AS have_album,
+
                 GROUP_CONCAT(
                     DISTINCT CONCAT(
                         a.id, '::', a.name, '::', a.slug
@@ -1340,13 +1347,18 @@ class Song extends Model
                         a.name ASC
                     SEPARATOR '||'
                 ) AS artist_data
+
             FROM songs s
+
             LEFT JOIN song_artists sa
                 ON sa.song_id = s.id
+
             LEFT JOIN artists a
                 ON a.id = sa.artist_id
                 AND a.deleted_at IS NULL
+
             WHERE s.id IN ($placeholders)
+
             GROUP BY
                 s.id,
                 s.title,
@@ -1384,10 +1396,12 @@ class Song extends Model
             }
 
             $seconds = (int)$row['duration_seconds'];
+
             $byId[(int)$row['id']] = [
                 'id' => (int)$row['id'],
                 'title' => $row['title'],
                 'slug' => $row['slug'],
+                'haveAlbum' => (bool)$row['have_album'],
                 'media' => [
                     'cover_url' => $row['cover_url'],
                     'audio_url' => $row['audio_url'],
@@ -1403,7 +1417,11 @@ class Song extends Model
 
         $stmt->close();
 
+        /*
+     * Preserve the original order of $ids.
+     */
         $ordered = [];
+
         foreach ($ids as $id) {
             if (isset($byId[$id])) {
                 $ordered[] = $byId[$id];
