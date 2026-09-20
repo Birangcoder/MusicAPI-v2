@@ -199,7 +199,6 @@ class ArtistController extends Controller
         */
 
         $this->success([
-            'artist' => $artist,
             'albums' => $result['data'],
             'pagination' => $result['pagination']
         ]);
