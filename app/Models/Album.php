@@ -8,12 +8,18 @@ use App\Core\Model;
 
 class Album extends Model
 {
-    /*
-    |--------------------------------------------------------------------------
-    | All Albums - Pagination
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Get all albums with pagination.
+     *
+     * Lightweight response:
+     * - id
+     * - title
+     * - slug
+     * - cover_url
+     * - artists
+     *
+     * No metadata.
+     */
     public function allPaginated(
         int $page = 1,
         int $limit = DEFAULT_LIMIT
@@ -23,49 +29,29 @@ class Album extends Model
 
         $offset = ($page - 1) * $limit;
 
-        /*
-    |--------------------------------------------------------------------------
-    | Total Albums
-    |--------------------------------------------------------------------------
-    */
-
+        // Total albums
         $countResult = $this->db->query("
-        SELECT COUNT(*) AS total
-        FROM albums
-        WHERE deleted_at IS NULL
-    ");
+            SELECT COUNT(*) AS total
+            FROM albums
+            WHERE deleted_at IS NULL
+        ");
 
-        $total = (int)$countResult->fetch_assoc()['total'];
+        $total = (int) $countResult->fetch_assoc()['total'];
 
-        /*
-    |--------------------------------------------------------------------------
-    | Albums
-    |--------------------------------------------------------------------------
-    */
-
+        // Albums
         $stmt = $this->db->prepare("
-        SELECT
-            id,
-            title,
-            slug,
-            description,
-            cover_url,
-            release_date,
-            album_type,
-            copyright,
-            label,
-            total_tracks
-
-        FROM albums
-
-        WHERE deleted_at IS NULL
-
-        ORDER BY
-            release_date DESC,
-            id DESC
-
-        LIMIT ? OFFSET ?
-    ");
+            SELECT
+                id,
+                title,
+                slug,
+                cover_url
+            FROM albums
+            WHERE deleted_at IS NULL
+            ORDER BY
+                release_date DESC,
+                id DESC
+            LIMIT ? OFFSET ?
+        ");
 
         $stmt->bind_param(
             "ii",
@@ -81,7 +67,7 @@ class Album extends Model
         $albumIds = [];
 
         while ($row = $result->fetch_assoc()) {
-            $albumId = (int)$row['id'];
+            $albumId = (int) $row['id'];
 
             $albumIds[] = $albumId;
 
@@ -90,16 +76,6 @@ class Album extends Model
                 'title' => $row['title'],
                 'slug' => $row['slug'],
                 'cover_url' => $row['cover_url'],
-
-                'metadata' => [
-                    'description' => $row['description'],
-                    'release_date' => $row['release_date'],
-                    'album_type' => $row['album_type'],
-                    'label' => $row['label'],
-                    'copyright' => $row['copyright'],
-                    'total_tracks' => (int)$row['total_tracks']
-                ],
-
                 'artists' => []
             ];
         }
@@ -107,41 +83,36 @@ class Album extends Model
         $stmt->close();
 
         /*
-    |--------------------------------------------------------------------------
-    | Get Artists For All Albums In ONE Query
-    |--------------------------------------------------------------------------
-    */
-
+         * Get artists for all albums in ONE query.
+         */
         if ($albumIds !== []) {
             $placeholders = implode(
                 ',',
                 array_fill(0, count($albumIds), '?')
             );
 
-            $types = str_repeat('i', count($albumIds));
+            $types = str_repeat(
+                'i',
+                count($albumIds)
+            );
 
             $artistStmt = $this->db->prepare("
-            SELECT DISTINCT
-                sal.album_id,
-                ar.id,
-                ar.name,
-                ar.slug
-
-            FROM song_albums sal
-
-            INNER JOIN song_artists sa
-                ON sa.song_id = sal.song_id
-
-            INNER JOIN artists ar
-                ON ar.id = sa.artist_id
-
-            WHERE sal.album_id IN ($placeholders)
-              AND ar.deleted_at IS NULL
-
-            ORDER BY
-                sal.album_id ASC,
-                ar.name ASC
-        ");
+                SELECT DISTINCT
+                    sal.album_id,
+                    ar.id,
+                    ar.name,
+                    ar.slug
+                FROM song_albums sal
+                INNER JOIN song_artists sa
+                    ON sa.song_id = sal.song_id
+                INNER JOIN artists ar
+                    ON ar.id = sa.artist_id
+                WHERE sal.album_id IN ($placeholders)
+                  AND ar.deleted_at IS NULL
+                ORDER BY
+                    sal.album_id ASC,
+                    ar.name ASC
+            ");
 
             $params = [$types];
 
@@ -161,13 +132,9 @@ class Album extends Model
             $seen = [];
 
             while ($artist = $artistResult->fetch_assoc()) {
-                $albumId = (int)$artist['album_id'];
-                $artistId = (int)$artist['id'];
+                $albumId = (int) $artist['album_id'];
+                $artistId = (int) $artist['id'];
 
-                /*
-             * Prevent duplicate artists when the same
-             * artist appears on multiple album tracks.
-             */
                 if (isset($seen[$albumId][$artistId])) {
                     continue;
                 }
@@ -188,12 +155,6 @@ class Album extends Model
             $artistStmt->close();
         }
 
-        /*
-    |--------------------------------------------------------------------------
-    | Pagination
-    |--------------------------------------------------------------------------
-    */
-
         return [
             'data' => array_values($albums),
 
@@ -205,6 +166,12 @@ class Album extends Model
         ];
     }
 
+    /**
+     * Get tracks belonging to an album.
+     *
+     * Tracks use the common song card format,
+     * but artists are removed for album track lists.
+     */
     public function tracks(
         int $albumId,
         int $page = 1,
@@ -215,60 +182,46 @@ class Album extends Model
 
         $offset = ($page - 1) * $limit;
 
-        /*
-    |--------------------------------------------------------------------------
-    | Total Tracks
-    |--------------------------------------------------------------------------
-    */
+        // Total tracks
+        $countStmt = $this->db->prepare("
+            SELECT COUNT(*) AS total
+            FROM song_albums sa
+            INNER JOIN songs s
+                ON s.id = sa.song_id
+            WHERE sa.album_id = ?
+              AND s.is_active = 1
+              AND s.deleted_at IS NULL
+        ");
 
+        $countStmt->bind_param(
+            "i",
+            $albumId
+        );
+
+        $countStmt->execute();
+
+        $total = (int) $countStmt
+            ->get_result()
+            ->fetch_assoc()['total'];
+
+        $countStmt->close();
+
+        // Track IDs
         $stmt = $this->db->prepare("
-        SELECT COUNT(*)
-        FROM song_albums sa
-
-        INNER JOIN songs s
-            ON s.id = sa.song_id
-
-        WHERE sa.album_id = ?
-          AND s.is_active = 1
-          AND s.deleted_at IS NULL
-    ");
-
-        $stmt->bind_param("i", $albumId);
-        $stmt->execute();
-
-        $stmt->bind_result($total);
-        $stmt->fetch();
-
-        $stmt->close();
-
-        $total = (int)$total;
-
-        /*
-    |--------------------------------------------------------------------------
-    | Track IDs
-    |--------------------------------------------------------------------------
-    */
-
-        $stmt = $this->db->prepare("
-        SELECT
-            sa.song_id
-
-        FROM song_albums sa
-
-        INNER JOIN songs s
-            ON s.id = sa.song_id
-
-        WHERE sa.album_id = ?
-          AND s.is_active = 1
-          AND s.deleted_at IS NULL
-
-        ORDER BY
-            sa.disc_number ASC,
-            sa.track_number ASC,
-            s.id ASC
-
-        LIMIT ? OFFSET ?
-    ");
+            SELECT
+                sa.song_id
+            FROM song_albums sa
+            INNER JOIN songs s
+                ON s.id = sa.song_id
+            WHERE sa.album_id = ?
+              AND s.is_active = 1
+              AND s.deleted_at IS NULL
+            ORDER BY
+                sa.disc_number ASC,
+                sa.track_number ASC,
+                s.id ASC
+            LIMIT ? OFFSET ?
+        ");
 
         $stmt->bind_param(
             "iii",
@@ -284,268 +237,106 @@ class Album extends Model
         $songIds = [];
 
         while ($row = $result->fetch_assoc()) {
-            $songIds[] = (int)$row['song_id'];
+            $songIds[] = (int) $row['song_id'];
         }
 
         $stmt->close();
 
-        /*
-    |--------------------------------------------------------------------------
-    | Common Song Cards
-    |--------------------------------------------------------------------------
-    */
-
-        $tracks = [];
-
-        if ($songIds !== []) {
-            $songModel = new Song();
-
-            $tracks = $songModel->cardsByIds($songIds);
-        }
-
-        /*
-    |--------------------------------------------------------------------------
-    | Pagination
-    |--------------------------------------------------------------------------
-    */
-
-        $totalPages = $total > 0
-            ? (int)ceil($total / $limit)
-            : 0;
-
-        return [
-            'data' => $tracks,
-
-            'pagination' => [
-                'page' => $page,
-                'limit' => $limit,
-                'total' => $total,
-                'total_pages' => $totalPages,
-                'has_next' => $page < $totalPages,
-                'has_previous' => $page > 1
-            ]
-        ];
-    }
-
-    /** Lightweight album cards for home/list sections. */
-    public function homeCards(int $limit = 5): array
-    {
-        $limit = max(1, min($limit, MAX_LIMIT));
-        $stmt = $this->db->prepare("
-            SELECT id, title, slug, cover_url, release_date, album_type, total_tracks
-            FROM albums
-            WHERE deleted_at IS NULL
-            ORDER BY release_date DESC, id DESC
-            LIMIT ?
-        ");
-        $stmt->bind_param("i", $limit);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $albums = [];
-        while ($row = $result->fetch_assoc()) {
-            $albums[] = [
-                'id' => (int)$row['id'],
-                'title' => $row['title'],
-                'slug' => $row['slug'],
-                'cover_url' => $row['cover_url'],
-                'metadata' => [
-                    'release_date' => $row['release_date'],
-                    'album_type' => $row['album_type'],
-                    'total_tracks' => (int)$row['total_tracks']
-                ]
-            ];
-        }
-        $stmt->close();
-        return $albums;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Album Details + Tracks
-    |--------------------------------------------------------------------------
-    */
-
-    public function findWithTracks(int $id): ?array
-    {
-        /*
-        |--------------------------------------------------------------------------
-        | Album
-        |--------------------------------------------------------------------------
-        */
-
-        $stmt = $this->db->prepare("
-            SELECT
-                id,
-                title,
-                slug,
-                description,
-                cover_url,
-                release_date,
-                album_type,
-                copyright,
-                label,
-                total_tracks
-
-            FROM albums
-
-            WHERE id = ?
-            AND deleted_at IS NULL
-
-            LIMIT 1
-        ");
-
-        $stmt->bind_param("i", $id);
-        $stmt->execute();
-
-        $album = $stmt
-            ->get_result()
-            ->fetch_assoc();
-
-        $stmt->close();
-
-        if (!$album) {
-            return null;
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | Album Artists
-        |--------------------------------------------------------------------------
-        */
-
-        $artistStmt = $this->db->prepare("
-            SELECT DISTINCT
-                ar.id,
-                ar.name,
-                ar.slug,
-                ar.image_url,
-                ar.verified
-
-            FROM song_albums sal
-
-            INNER JOIN song_artists sa
-                ON sa.song_id = sal.song_id
-
-            INNER JOIN artists ar
-                ON ar.id = sa.artist_id
-
-            WHERE sal.album_id = ?
-            AND ar.deleted_at IS NULL
-
-            ORDER BY
-                CASE
-                    WHEN sa.role = 'primary' THEN 0
-                    ELSE 1
-                END,
-                ar.name ASC
-        ");
-
-        $artistStmt->bind_param("i", $id);
-        $artistStmt->execute();
-
-        $artistResult = $artistStmt->get_result();
-
-        $artists = [];
-
-        while ($artist = $artistResult->fetch_assoc()) {
-            $artists[] = [
-                'id' => (int)$artist['id'],
-                'name' => $artist['name'],
-                'slug' => $artist['slug'],
-                'image_url' => $artist['image_url'],
-                'verified' => (bool)$artist['verified']
-            ];
-        }
-
-        $artistStmt->close();
-
-        /*
-        |--------------------------------------------------------------------------
-        | Get Album Track IDs
-        |--------------------------------------------------------------------------
-        */
-
-        $stmt = $this->db->prepare("
-            SELECT
-                sa.song_id
-
-            FROM song_albums sa
-
-            INNER JOIN songs s
-                ON s.id = sa.song_id
-
-            WHERE sa.album_id = ?
-            AND s.is_active = 1
-            AND s.deleted_at IS NULL
-
-            ORDER BY
-                sa.disc_number ASC,
-                sa.track_number ASC,
-                s.id ASC
-        ");
-
-        $stmt->bind_param("i", $id);
-
-        $stmt->execute();
-
-        $result = $stmt->get_result();
-
-        $songIds = [];
-
-        while ($row = $result->fetch_assoc()) {
-            $songIds[] = (int)$row['song_id'];
-        }
-
-        $stmt->close();
-
-        /*
-        |--------------------------------------------------------------------------
-        | Get Tracks Using Common Song Card Format
-        |--------------------------------------------------------------------------
-        */
-
+        // Get common song cards
         $tracks = [];
 
         if ($songIds !== []) {
             $song = new Song();
 
             $tracks = $song->cardsByIds($songIds);
+
+            // Album track list does not need artist data
+            foreach ($tracks as &$track) {
+                unset($track['artists']);
+            }
+
+            unset($track);
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Final Album Response
-        |--------------------------------------------------------------------------
-        */
-
         return [
-            'id' => (int)$album['id'],
-            'title' => $album['title'],
-            'slug' => $album['slug'],
-            'cover_url' => $album['cover_url'],
+            'data' => $tracks,
 
-            'metadata' => [
-                'description' => $album['description'],
-                'release_date' => $album['release_date'],
-                'album_type' => $album['album_type'],
-                'label' => $album['label'],
-                'copyright' => $album['copyright'],
-                'total_tracks' => (int)$album['total_tracks']
-            ],
-
-            'artists' => $artists,
-
-            'tracks' => $tracks
+            'pagination' => $this->pagination(
+                $page,
+                $limit,
+                $total
+            )
         ];
     }
 
+    /**
+     * Lightweight album cards for home/list sections.
+     */
+    public function homeCards(
+        int $limit = 5
+    ): array {
+        $limit = max(
+            1,
+            min($limit, MAX_LIMIT)
+        );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Find Album
-    |--------------------------------------------------------------------------
-    */
+        $stmt = $this->db->prepare("
+            SELECT
+                id,
+                title,
+                slug,
+                cover_url,
+                release_date,
+                album_type,
+                total_tracks
+            FROM albums
+            WHERE deleted_at IS NULL
+            ORDER BY
+                release_date DESC,
+                id DESC
+            LIMIT ?
+        ");
 
+        $stmt->bind_param(
+            "i",
+            $limit
+        );
+
+        $stmt->execute();
+
+        $result = $stmt->get_result();
+
+        $albums = [];
+
+        while ($row = $result->fetch_assoc()) {
+            $albums[] = [
+                'id' => (int) $row['id'],
+                'title' => $row['title'],
+                'slug' => $row['slug'],
+                'cover_url' => $row['cover_url'],
+                'metadata' => [
+                    'release_date' => $row['release_date'],
+                    'album_type' => $row['album_type'],
+                    'total_tracks' => (int) $row['total_tracks']
+                ]
+            ];
+        }
+
+        $stmt->close();
+
+        return $albums;
+    }
+
+    /**
+     * Find album details.
+     *
+     * Used by:
+     * GET /albums/{id}
+     * GET /albums/{id}/tracks
+     *
+     * Metadata included.
+     * Artists excluded.
+     */
     public function find(int $id): ?array
     {
         $stmt = $this->db->prepare("
@@ -560,16 +351,16 @@ class Album extends Model
                 copyright,
                 label,
                 total_tracks
-
             FROM albums
-
             WHERE id = ?
-            AND deleted_at IS NULL
-
+              AND deleted_at IS NULL
             LIMIT 1
         ");
 
-        $stmt->bind_param("i", $id);
+        $stmt->bind_param(
+            "i",
+            $id
+        );
 
         $stmt->execute();
 
@@ -583,14 +374,8 @@ class Album extends Model
             return null;
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Album Response
-        |--------------------------------------------------------------------------
-        */
-
         return [
-            'id' => (int)$album['id'],
+            'id' => (int) $album['id'],
             'title' => $album['title'],
             'slug' => $album['slug'],
             'cover_url' => $album['cover_url'],
@@ -601,24 +386,22 @@ class Album extends Model
                 'album_type' => $album['album_type'],
                 'label' => $album['label'],
                 'copyright' => $album['copyright'],
-                'total_tracks' => (int)$album['total_tracks']
-            ],
+                'total_tracks' => (int) $album['total_tracks']
+            ]
         ];
     }
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | Search Albums
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Search albums.
+     */
     public function search(
         string $keyword,
         int $limit = 20
     ): array {
-
-        $limit = max(1, min($limit, MAX_LIMIT));
+        $limit = max(
+            1,
+            min($limit, MAX_LIMIT)
+        );
 
         $keyword = "%{$keyword}%";
 
@@ -627,20 +410,14 @@ class Album extends Model
                 id,
                 title,
                 slug,
-                description,
                 cover_url,
                 release_date,
                 album_type,
-                label,
                 total_tracks
-
             FROM albums
-
             WHERE deleted_at IS NULL
-            AND title LIKE ?
-
+              AND title LIKE ?
             ORDER BY title ASC
-
             LIMIT ?
         ");
 
@@ -657,17 +434,16 @@ class Album extends Model
         $albums = [];
 
         while ($row = $result->fetch_assoc()) {
-
             $albums[] = [
-                'id' => (int)$row['id'],
+                'id' => (int) $row['id'],
                 'title' => $row['title'],
                 'slug' => $row['slug'],
-                'description' => $row['description'],
                 'cover_url' => $row['cover_url'],
-                'release_date' => $row['release_date'],
-                'album_type' => $row['album_type'],
-                'label' => $row['label'],
-                'total_tracks' => (int)$row['total_tracks']
+                'metadata' => [
+                    'release_date' => $row['release_date'],
+                    'album_type' => $row['album_type'],
+                    'total_tracks' => (int) $row['total_tracks']
+                ]
             ];
         }
 
@@ -676,107 +452,16 @@ class Album extends Model
         return $albums;
     }
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | Album Songs
-    |--------------------------------------------------------------------------
-    */
-
-    public function songs(int $albumId): array
-    {
-        $stmt = $this->db->prepare("
-            SELECT
-                s.id,
-                s.title,
-                s.slug,
-                s.cover_url,
-                s.audio_url,
-                s.language,
-                s.duration_seconds,
-                sa.track_number,
-                sa.disc_number,
-                s.play_count,
-                s.like_count,
-                s.download_count
-
-            FROM songs s
-
-            INNER JOIN song_albums sa
-                ON sa.song_id = s.id
-
-            WHERE sa.album_id = ?
-            AND s.is_active = 1
-            AND s.deleted_at IS NULL
-
-            ORDER BY
-                sa.disc_number ASC,
-                sa.track_number ASC,
-                s.id ASC
-        ");
-
-        $stmt->bind_param("i", $albumId);
-
-        $stmt->execute();
-
-        $result = $stmt->get_result();
-
-        $songs = [];
-
-        while ($row = $result->fetch_assoc()) {
-
-            $songs[] = [
-                'id' => (int)$row['id'],
-                'title' => $row['title'],
-                'slug' => $row['slug'],
-
-                'media' => [
-                    'cover_url' => $row['cover_url'],
-                    'audio_url' => $row['audio_url'],
-                    'duration_seconds' => (int)$row['duration_seconds'],
-                    'duration' => $this->formatDuration(
-                        (int)$row['duration_seconds']
-                    )
-                ],
-
-                'metadata' => [
-                    'language' => $row['language'],
-                    'track_number' => $row['track_number'] !== null
-                        ? (int)$row['track_number']
-                        : null,
-                    'disc_number' => $row['disc_number'] !== null
-                        ? (int)$row['disc_number']
-                        : null
-                ],
-
-                'statistics' => [
-                    'play_count' => (int)$row['play_count'],
-                    'like_count' => (int)$row['like_count'],
-                    'download_count' => (int)$row['download_count']
-                ]
-            ];
-        }
-
-        $stmt->close();
-
-        return $songs;
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Pagination Helper
-    |--------------------------------------------------------------------------
-    */
-
+    /**
+     * Pagination helper.
+     */
     private function pagination(
         int $page,
         int $limit,
         int $total
     ): array {
-
         $totalPages = $total > 0
-            ? (int)ceil($total / $limit)
+            ? (int) ceil($total / $limit)
             : 0;
 
         return [
@@ -789,25 +474,9 @@ class Album extends Model
         ];
     }
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | Format Duration
-    |--------------------------------------------------------------------------
-    */
-
-    private function formatDuration(int $seconds): string
-    {
-        $minutes = intdiv($seconds, 60);
-        $remainingSeconds = $seconds % 60;
-
-        return sprintf(
-            "%02d:%02d",
-            $minutes,
-            $remainingSeconds
-        );
-    }
-
+    /**
+     * Dynamic bind_param helper.
+     */
     private function bindDynamic(
         \mysqli_stmt $stmt,
         array $params
@@ -820,7 +489,10 @@ class Album extends Model
             $refs[$key] = &$value;
         }
 
-        array_unshift($refs, $types);
+        array_unshift(
+            $refs,
+            $types
+        );
 
         call_user_func_array(
             [$stmt, 'bind_param'],
