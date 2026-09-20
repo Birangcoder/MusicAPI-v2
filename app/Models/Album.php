@@ -234,14 +234,16 @@ class Album extends Model
                 copyright,
                 label,
                 total_tracks
+
             FROM albums
+
             WHERE id = ?
             AND deleted_at IS NULL
+
             LIMIT 1
         ");
 
         $stmt->bind_param("i", $id);
-
         $stmt->execute();
 
         $album = $stmt
@@ -256,25 +258,65 @@ class Album extends Model
 
         /*
         |--------------------------------------------------------------------------
-        | Tracks
+        | Album Artists
+        |--------------------------------------------------------------------------
+        */
+
+        $artistStmt = $this->db->prepare("
+            SELECT DISTINCT
+                ar.id,
+                ar.name,
+                ar.slug,
+                ar.image_url,
+                ar.verified
+
+            FROM song_albums sal
+
+            INNER JOIN song_artists sa
+                ON sa.song_id = sal.song_id
+
+            INNER JOIN artists ar
+                ON ar.id = sa.artist_id
+
+            WHERE sal.album_id = ?
+            AND ar.deleted_at IS NULL
+
+            ORDER BY
+                CASE
+                    WHEN sa.role = 'primary' THEN 0
+                    ELSE 1
+                END,
+                ar.name ASC
+        ");
+
+        $artistStmt->bind_param("i", $id);
+        $artistStmt->execute();
+
+        $artistResult = $artistStmt->get_result();
+
+        $artists = [];
+
+        while ($artist = $artistResult->fetch_assoc()) {
+            $artists[] = [
+                'id' => (int)$artist['id'],
+                'name' => $artist['name'],
+                'slug' => $artist['slug'],
+                'image_url' => $artist['image_url'],
+                'verified' => (bool)$artist['verified']
+            ];
+        }
+
+        $artistStmt->close();
+
+        /*
+        |--------------------------------------------------------------------------
+        | Get Album Track IDs
         |--------------------------------------------------------------------------
         */
 
         $stmt = $this->db->prepare("
             SELECT
-                s.id,
-                s.title,
-                s.slug,
-                s.cover_url,
-                s.audio_url,
-                s.language,
-                s.duration_seconds,
-                s.release_date,
-                sa.track_number,
-                sa.disc_number,
-                s.play_count,
-                s.like_count,
-                s.download_count
+                sa.song_id
 
             FROM song_albums sa
 
@@ -297,57 +339,53 @@ class Album extends Model
 
         $result = $stmt->get_result();
 
-        $tracks = [];
+        $songIds = [];
 
-        while ($track = $result->fetch_assoc()) {
-
-            $tracks[] = [
-                'id' => (int)$track['id'],
-                'title' => $track['title'],
-                'slug' => $track['slug'],
-
-                'media' => [
-                    'cover_url' => $track['cover_url'],
-                    'audio_url' => $track['audio_url'],
-                    'duration_seconds' => (int)$track['duration_seconds'],
-                    'duration' => $this->formatDuration(
-                        (int)$track['duration_seconds']
-                    )
-                ],
-
-                'metadata' => [
-                    'language' => $track['language'],
-                    'release_date' => $track['release_date'],
-                    'track_number' => $track['track_number'] !== null
-                        ? (int)$track['track_number']
-                        : null,
-                    'disc_number' => $track['disc_number'] !== null
-                        ? (int)$track['disc_number']
-                        : null
-                ],
-
-                'statistics' => [
-                    'play_count' => (int)$track['play_count'],
-                    'like_count' => (int)$track['like_count'],
-                    'download_count' => (int)$track['download_count']
-                ]
-            ];
+        while ($row = $result->fetch_assoc()) {
+            $songIds[] = (int)$row['song_id'];
         }
 
         $stmt->close();
 
         /*
         |--------------------------------------------------------------------------
-        | Final Response
+        | Get Tracks Using Common Song Card Format
         |--------------------------------------------------------------------------
         */
 
-        $album['id'] = (int)$album['id'];
-        $album['total_tracks'] = (int)$album['total_tracks'];
+        $tracks = [];
 
-        $album['tracks'] = $tracks;
+        if ($songIds !== []) {
+            $song = new Song();
 
-        return $album;
+            $tracks = $song->cardsByIds($songIds);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Final Album Response
+        |--------------------------------------------------------------------------
+        */
+
+        return [
+            'id' => (int)$album['id'],
+            'title' => $album['title'],
+            'slug' => $album['slug'],
+            'cover_url' => $album['cover_url'],
+
+            'metadata' => [
+                'description' => $album['description'],
+                'release_date' => $album['release_date'],
+                'album_type' => $album['album_type'],
+                'label' => $album['label'],
+                'copyright' => $album['copyright'],
+                'total_tracks' => (int)$album['total_tracks']
+            ],
+
+            'artists' => $artists,
+
+            'tracks' => $tracks
+        ];
     }
 
 
@@ -370,9 +408,7 @@ class Album extends Model
                 album_type,
                 copyright,
                 label,
-                total_tracks,
-                created_at,
-                updated_at
+                total_tracks
 
             FROM albums
 
@@ -396,10 +432,81 @@ class Album extends Model
             return null;
         }
 
-        $album['id'] = (int)$album['id'];
-        $album['total_tracks'] = (int)$album['total_tracks'];
+        /*
+        |--------------------------------------------------------------------------
+        | Album Artists
+        |--------------------------------------------------------------------------
+        */
 
-        return $album;
+        $artistStmt = $this->db->prepare("
+            SELECT DISTINCT
+                ar.id,
+                ar.name,
+                ar.slug,
+                ar.image_url,
+                ar.verified
+
+            FROM song_albums sal
+
+            INNER JOIN song_artists sa
+                ON sa.song_id = sal.song_id
+
+            INNER JOIN artists ar
+                ON ar.id = sa.artist_id
+
+            WHERE sal.album_id = ?
+            AND ar.deleted_at IS NULL
+
+            ORDER BY
+                CASE
+                    WHEN sa.role = 'primary' THEN 0
+                    ELSE 1
+                END,
+                ar.name ASC
+        ");
+
+        $artistStmt->bind_param("i", $id);
+        $artistStmt->execute();
+
+        $artistResult = $artistStmt->get_result();
+
+        $artists = [];
+
+        while ($artist = $artistResult->fetch_assoc()) {
+            $artists[] = [
+                'id' => (int)$artist['id'],
+                'name' => $artist['name'],
+                'slug' => $artist['slug'],
+                'image_url' => $artist['image_url'],
+                'verified' => (bool)$artist['verified']
+            ];
+        }
+
+        $artistStmt->close();
+
+        /*
+        |--------------------------------------------------------------------------
+        | Album Response
+        |--------------------------------------------------------------------------
+        */
+
+        return [
+            'id' => (int)$album['id'],
+            'title' => $album['title'],
+            'slug' => $album['slug'],
+            'cover_url' => $album['cover_url'],
+
+            'metadata' => [
+                'description' => $album['description'],
+                'release_date' => $album['release_date'],
+                'album_type' => $album['album_type'],
+                'label' => $album['label'],
+                'copyright' => $album['copyright'],
+                'total_tracks' => (int)$album['total_tracks']
+            ],
+
+            'artists' => $artists
+        ];
     }
 
 

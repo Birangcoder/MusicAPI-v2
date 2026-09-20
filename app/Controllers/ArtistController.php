@@ -24,18 +24,28 @@ class ArtistController extends Controller
 
     public function index(): void
     {
-        $page = max(1, (int)($_GET['page'] ?? 1));
-        $limit = (int)($_GET['limit'] ?? DEFAULT_LIMIT);
-
-        $result = $this->artist->allPaginated($page, $limit);
-
-        $this->success(
-            [
-                'artists' => $result['data'],
-                'pagination' => $result['pagination']
-            ],
-            'Success'
+        $page = max(
+            1,
+            (int)($_GET['page'] ?? 1)
         );
+
+        $limit = max(
+            1,
+            min(
+                (int)($_GET['limit'] ?? DEFAULT_LIMIT),
+                MAX_LIMIT
+            )
+        );
+
+        $result = $this->artist->allPaginated(
+            $page,
+            $limit
+        );
+
+        $this->success([
+            'artists' => $result['data'],
+            'pagination' => $result['pagination']
+        ]);
     }
 
     /*
@@ -49,13 +59,25 @@ class ArtistController extends Controller
         $artist = $this->artist->find($id);
 
         if (!$artist) {
-            $this->error('Artist not found.', 404);
+            $this->error(
+                'Artist not found.',
+                404
+            );
+
             return;
         }
 
-        $this->success([
-            'artist' => $artist
-        ]);
+        /*
+         * Do NOT wrap it inside:
+         *
+         * [
+         *     'artist' => $artist
+         * ]
+         *
+         * Keep the same artist object format as /artists.
+         */
+
+        $this->success($artist);
     }
 
     /*
@@ -66,21 +88,18 @@ class ArtistController extends Controller
 
     public function tracks(int $id): void
     {
-        /*
-        |--------------------------------------------------------------------------
-        | Pagination
-        |--------------------------------------------------------------------------
-        */
+        $page = max(
+            1,
+            (int)($_GET['page'] ?? 1)
+        );
 
-        $page = isset($_GET['page'])
-            ? max(1, (int)$_GET['page'])
-            : 1;
-
-        $limit = isset($_GET['limit'])
-            ? (int)$_GET['limit']
-            : DEFAULT_LIMIT;
-
-        $limit = max(1, min($limit, MAX_LIMIT));
+        $limit = max(
+            1,
+            min(
+                (int)($_GET['limit'] ?? DEFAULT_LIMIT),
+                MAX_LIMIT
+            )
+        );
 
         /*
         |--------------------------------------------------------------------------
@@ -91,13 +110,17 @@ class ArtistController extends Controller
         $artist = $this->artist->find($id);
 
         if (!$artist) {
-            $this->error('Artist not found.', 404);
+            $this->error(
+                'Artist not found.',
+                404
+            );
+
             return;
         }
 
         /*
         |--------------------------------------------------------------------------
-        | Get artist tracks
+        | Get tracks
         |--------------------------------------------------------------------------
         */
 
@@ -114,16 +137,8 @@ class ArtistController extends Controller
         */
 
         $this->success([
-            'artist' => [
-                'id' => (int)$artist['id'],
-                'name' => $artist['name'],
-                'slug' => $artist['slug'],
-                'image_url' => $artist['image_url'],
-                'verified' => (bool)$artist['verified']
-            ],
-
+            'artist' => $artist,
             'tracks' => $result['data'],
-
             'pagination' => $result['pagination']
         ]);
     }
@@ -136,22 +151,41 @@ class ArtistController extends Controller
 
     public function albums(int $id): void
     {
-        $page = isset($_GET['page'])
-            ? max(1, (int)$_GET['page'])
-            : 1;
+        $page = max(
+            1,
+            (int)($_GET['page'] ?? 1)
+        );
 
-        $limit = isset($_GET['limit'])
-            ? (int)$_GET['limit']
-            : DEFAULT_LIMIT;
+        $limit = max(
+            1,
+            min(
+                (int)($_GET['limit'] ?? DEFAULT_LIMIT),
+                MAX_LIMIT
+            )
+        );
 
-        $limit = max(1, min($limit, MAX_LIMIT));
+        /*
+        |--------------------------------------------------------------------------
+        | Check artist
+        |--------------------------------------------------------------------------
+        */
 
         $artist = $this->artist->find($id);
 
         if (!$artist) {
-            $this->error('Artist not found.', 404);
+            $this->error(
+                'Artist not found.',
+                404
+            );
+
             return;
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Get albums
+        |--------------------------------------------------------------------------
+        */
 
         $result = $this->artist->albums(
             $id,
@@ -159,17 +193,15 @@ class ArtistController extends Controller
             $limit
         );
 
+        /*
+        |--------------------------------------------------------------------------
+        | Response
+        |--------------------------------------------------------------------------
+        */
+
         $this->success([
-            'artist' => [
-                'id' => (int)$artist['id'],
-                'name' => $artist['name'],
-                'slug' => $artist['slug'],
-                'image_url' => $artist['image_url'],
-                'verified' => (bool)$artist['verified']
-            ],
-
+            'artist' => $artist,
             'albums' => $result['data'],
-
             'pagination' => $result['pagination']
         ]);
     }
