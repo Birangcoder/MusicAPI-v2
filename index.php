@@ -2,50 +2,37 @@
 
 declare(strict_types=1);
 
-define('ROOT_PATH', dirname(__DIR__));
+// One Render service exposes both APIs:
+//   /v1/* -> MySQL API
+//   /v2/* -> PostgreSQL/Supabase API
 
-require 'config/config.php';
-require 'app/Middleware/CorsMiddleware.php';
+$path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+$path = '/' . trim($path, '/');
 
-\App\Middleware\CorsMiddleware::handle();
-
-spl_autoload_register(function ($class) {
-
-    $prefix = 'App\\';
-
-    if (strpos($class, $prefix) !== 0) {
-        return;
-    }
-
-    $class = substr($class, strlen($prefix));
-
-    $file = 'app/' . str_replace('\\', '/', $class) . '.php';
-
-    if (file_exists($file)) {
-        require $file;
-    }
-});
-
-use App\Core\Router;
-
-$router = new Router();
-
-require 'routes/api.php';
-
-$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-
-// Get the directory where index.php is running.
-// Local: /MusicAPI-v2
-// Production: /
-$base = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
-
-if ($base !== '' && $base !== '/' && str_starts_with($uri, $base)) {
-    $uri = substr($uri, strlen($base));
+if ($path === '/v1' || str_starts_with($path, '/v1/')) {
+    $version = 'v1';
+} elseif ($path === '/v2' || str_starts_with($path, '/v2/')) {
+    $version = 'v2';
+} else {
+    header('Content-Type: application/json; charset=utf-8');
+    http_response_code(404);
+    echo json_encode([
+        'success' => false,
+        'message' => 'Invalid API version. Use /v1 or /v2.'
+    ]);
+    exit;
 }
 
-$uri = trim($uri, '/');
+// Remove /v1 or /v2 before handing the request to the selected API.
+$subPath = substr($path, strlen('/' . $version));
+if ($subPath === '') {
+    $subPath = '/';
+}
 
-$router->dispatch(
-    $_SERVER['REQUEST_METHOD'],
-    $uri
-);
+$query = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_QUERY);
+$_SERVER['REQUEST_URI'] = $subPath . ($query ? '?' . $query : '');
+
+// Child API files use relative paths, so execute from their directory.
+$apiRoot = __DIR__ . DIRECTORY_SEPARATOR . $version;
+chdir($apiRoot);
+require $apiRoot . DIRECTORY_SEPARATOR . 'index.php';
