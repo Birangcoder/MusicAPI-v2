@@ -1307,6 +1307,78 @@ class Song extends Model
      * This deliberately excludes lyrics, description, genres, album,
      * statistics and timestamps. Full details remain available through find().
      */
+    public function updateMonthlyListeners(
+        int $userId,
+        int $songId
+    ): void {
+        /*
+     * Find all artists attached to this song
+     * that this user has NOT listened to during
+     * the current calendar month.
+     */
+        $stmt = $this->db->prepare("
+        SELECT DISTINCT
+            sa.artist_id
+        FROM song_artists sa
+        WHERE sa.song_id = ?
+          AND NOT EXISTS (
+              SELECT 1
+              FROM history h
+              INNER JOIN song_artists previous_sa
+                  ON previous_sa.song_id = h.song_id
+              WHERE h.user_id = ?
+                AND previous_sa.artist_id = sa.artist_id
+                AND h.played_at >= DATE_FORMAT(
+                    CURRENT_DATE,
+                    '%Y-%m-01'
+                )
+          )
+    ");
+
+        $stmt->bind_param(
+            "ii",
+            $songId,
+            $userId
+        );
+
+        $stmt->execute();
+
+        $result = $stmt->get_result();
+
+        $artistIds = [];
+
+        while ($row = $result->fetch_assoc()) {
+            $artistIds[] = (int)$row['artist_id'];
+        }
+
+        $stmt->close();
+
+        /*
+     * Increase each artist only once.
+     */
+        if ($artistIds === []) {
+            return;
+        }
+
+        $updateStmt = $this->db->prepare("
+        UPDATE artists
+        SET monthly_listeners = monthly_listeners + 1
+        WHERE id = ?
+          AND deleted_at IS NULL
+    ");
+
+        foreach ($artistIds as $artistId) {
+            $updateStmt->bind_param(
+                "i",
+                $artistId
+            );
+
+            $updateStmt->execute();
+        }
+
+        $updateStmt->close();
+    }
+
     public function cardsByIds(array $ids): array
     {
         $ids = array_values(array_unique(array_filter(

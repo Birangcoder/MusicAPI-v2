@@ -269,6 +269,11 @@ class SongController extends Controller
 
         $this->song->increasePlayCount($id);
 
+        $this->song->updateMonthlyListeners(
+            $userId,
+            $id
+        );
+
         $this->song->addHistory(
             $userId,
             $id,
@@ -287,7 +292,7 @@ class SongController extends Controller
             'Play recorded.'
         );
     }
-    
+
     /*
     |--------------------------------------------------------------------------
     | POST /songs/{id}/progress
