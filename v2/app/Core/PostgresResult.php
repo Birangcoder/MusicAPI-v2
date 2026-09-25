@@ -14,7 +14,7 @@ class PostgresResult
     public function __construct($source)
     {
         if ($source instanceof \PDOStatement) {
-            $this->rows = $source->fetchAll(PDO::FETCH_ASSOC);
+            $this->rows = $source->fetchAll(\PDO::FETCH_ASSOC);
             $this->num_rows = count($this->rows);
         }
     }
@@ -49,4 +49,3 @@ class PostgresResult
     }
 
 }
-
