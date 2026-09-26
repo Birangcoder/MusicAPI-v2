@@ -888,7 +888,9 @@ class Song extends Model
 
     public function create(array $data): int
     {
-        $this->db->begin_transaction();
+        $pdo = $this->db->getPdo();
+
+        $pdo->beginTransaction();
 
         try {
             $stmt = $this->db->prepare("
@@ -961,11 +963,11 @@ class Song extends Model
                 $stmt->close();
             }
 
-            $this->db->commit();
+            $pdo->commit();
 
             return $songId;
         } catch (\Throwable $e) {
-            $this->db->rollback();
+            $pdo->rollBack();
             throw $e;
         }
     }
@@ -1195,10 +1197,14 @@ class Song extends Model
         SET
             play_duration = ?,
             completed = ?
-        WHERE user_id = ?
-          AND song_id = ?
-        ORDER BY played_at DESC
-        LIMIT 1
+        WHERE id = (
+            SELECT id
+            FROM history
+            WHERE user_id = ?
+            AND song_id = ?
+            ORDER BY played_at DESC, id DESC
+            LIMIT 1
+        )
     ");
 
         $completedValue = $completed ? 1 : 0;
