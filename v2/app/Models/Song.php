@@ -1082,74 +1082,80 @@ class Song extends Model
         }
 
         $stmt = $this->db->prepare("
-            SELECT
-                s.id,
+            SELECT *
+            FROM (
+                SELECT
+                    s.id,
 
-                (
-                    CASE WHEN EXISTS (
-                        SELECT 1
-                        FROM song_artists sa
-                        INNER JOIN artist_follows af
-                            ON af.artist_id = sa.artist_id
-                        WHERE sa.song_id = s.id
-                        AND af.user_id = ?
-                    )
-                    THEN 5 ELSE 0 END
+                    (
+                        CASE WHEN EXISTS (
+                            SELECT 1
+                            FROM song_artists sa
+                            INNER JOIN artist_follows af
+                                ON af.artist_id = sa.artist_id
+                            WHERE sa.song_id = s.id
+                            AND af.user_id = ?
+                        )
+                        THEN 5 ELSE 0 END
 
-                    +
+                        +
 
-                    CASE WHEN EXISTS (
-                        SELECT 1
-                        FROM song_artists sa
-                        INNER JOIN favorites f
-                            ON f.user_id = ?
-                        INNER JOIN song_artists fav_sa
-                            ON fav_sa.song_id = f.song_id
-                            AND fav_sa.artist_id = sa.artist_id
-                        WHERE sa.song_id = s.id
-                    )
-                    THEN 3 ELSE 0 END
+                        CASE WHEN EXISTS (
+                            SELECT 1
+                            FROM song_artists sa
+                            INNER JOIN favorites f
+                                ON f.user_id = ?
+                            INNER JOIN song_artists fav_sa
+                                ON fav_sa.song_id = f.song_id
+                                AND fav_sa.artist_id = sa.artist_id
+                            WHERE sa.song_id = s.id
+                        )
+                        THEN 3 ELSE 0 END
 
-                    +
+                        +
 
-                    COALESCE((
-                        SELECT COUNT(DISTINCT h.id) * 2
-                        FROM history h
-                        INNER JOIN song_artists hist_sa
-                            ON hist_sa.song_id = h.song_id
-                        INNER JOIN song_artists current_sa
-                            ON current_sa.artist_id = hist_sa.artist_id
-                        WHERE h.user_id = ?
-                        AND current_sa.song_id = s.id
-                    ), 0)
-                ) AS recommendation_score
+                        COALESCE((
+                            SELECT COUNT(DISTINCT h.id) * 2
+                            FROM history h
+                            INNER JOIN song_artists hist_sa
+                                ON hist_sa.song_id = h.song_id
+                            INNER JOIN song_artists current_sa
+                                ON current_sa.artist_id = hist_sa.artist_id
+                            WHERE h.user_id = ?
+                            AND current_sa.song_id = s.id
+                        ), 0)
+                    ) AS recommendation_score,
 
-            FROM songs s
+                    s.play_count,
+                    s.release_date
 
-            WHERE s.is_active = 1
-            AND s.deleted_at IS NULL
+                FROM songs s
 
-            AND NOT EXISTS (
-                SELECT 1
-                FROM favorites f
-                WHERE f.user_id = ?
-                AND f.song_id = s.id
-            )
+                WHERE s.is_active = 1
+                AND s.deleted_at IS NULL
 
-            AND NOT EXISTS (
-                SELECT 1
-                FROM history h
-                WHERE h.user_id = ?
-                AND h.song_id = s.id
-            )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM favorites f
+                    WHERE f.user_id = ?
+                    AND f.song_id = s.id
+                )
 
-            HAVING recommendation_score > 0
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM history h
+                    WHERE h.user_id = ?
+                    AND h.song_id = s.id
+                )
+            ) AS recommendations
+
+            WHERE recommendation_score > 0
 
             ORDER BY
                 recommendation_score DESC,
-                s.play_count DESC,
-                s.release_date DESC,
-                s.id DESC
+                play_count DESC,
+                release_date DESC,
+                id DESC
 
             LIMIT ? OFFSET ?
         ");
