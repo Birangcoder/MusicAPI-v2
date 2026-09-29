@@ -1396,7 +1396,12 @@ class Song extends Model
             return [];
         }
 
-        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $placeholders = implode(
+            ',',
+            array_fill(0, count($ids), '?')
+        );
+
+        $types = str_repeat('i', count($ids));
 
         $stmt = $this->db->prepare("
         SELECT
@@ -1421,7 +1426,10 @@ class Song extends Model
                 a.id::text || '::' || a.name || '::' || a.slug,
                 '||'
                 ORDER BY
-                    CASE WHEN sa.role = 'primary' THEN 0 ELSE 1 END,
+                    CASE
+                        WHEN sa.role = 'primary' THEN 0
+                        ELSE 1
+                    END,
                     a.name ASC
             ) AS artist_data
 
@@ -1451,7 +1459,18 @@ class Song extends Model
             sal.album_id
     ");
 
-        $params = $ids;
+        /*
+     * bindDynamic() should ultimately call:
+     *
+     * bind_param('iii...', $id1, $id2, $id3...)
+     *
+     * for the PostgreSQL wrapper.
+     */
+        $params = [$types];
+
+        foreach ($ids as $id) {
+            $params[] = $id;
+        }
 
         $this->bindDynamic($stmt, $params);
 
@@ -1462,13 +1481,17 @@ class Song extends Model
         $byId = [];
 
         while ($row = $result->fetch_assoc()) {
+
             /*
-         * Build artists array
+         * Build artists
          */
             $artists = [];
 
             if (!empty($row['artist_data'])) {
-                foreach (explode('||', $row['artist_data']) as $artist) {
+                foreach (
+                    explode('||', $row['artist_data'])
+                    as $artist
+                ) {
                     $parts = explode('::', $artist, 3);
 
                     if (count($parts) === 3) {
@@ -1492,7 +1515,7 @@ class Song extends Model
             $hasAlbum = !empty($row['album_id']);
 
             /*
-         * Build song card
+         * Song card
          */
             $byId[(int) $row['id']] = [
                 'id' => (int) $row['id'],
@@ -1527,7 +1550,7 @@ class Song extends Model
         $stmt->close();
 
         /*
-     * Preserve the original order of $ids
+     * Preserve original order of IDs
      */
         $ordered = [];
 
