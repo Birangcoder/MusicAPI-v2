@@ -1397,98 +1397,137 @@ class Song extends Model
         }
 
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        $types = str_repeat('i', count($ids));
 
         $stmt = $this->db->prepare("
-            SELECT
-                s.id,
-                s.title,
-                s.slug,
-                s.cover_url,
-                s.audio_url,
-                s.duration_seconds,
-                s.language,
-                s.release_date,
+        SELECT
+            s.id,
+            s.title,
+            s.slug,
+            s.cover_url,
+            s.audio_url,
+            s.duration_seconds,
+            s.language,
+            s.release_date,
 
-                EXISTS (
-                    SELECT 1
-                    FROM song_albums sal
-                    WHERE sal.song_id = s.id
-                ) AS have_album,
+            sal.album_id,
 
-                STRING_AGG(a.id::text || '::' || a.name || '::' || a.slug, '||' ORDER BY CASE WHEN sa.role = 'primary' THEN 0 ELSE 1 END, a.name ASC) AS artist_data
+            EXISTS (
+                SELECT 1
+                FROM song_albums sal2
+                WHERE sal2.song_id = s.id
+            ) AS have_album,
 
-            FROM songs s
+            STRING_AGG(
+                a.id::text || '::' || a.name || '::' || a.slug,
+                '||'
+                ORDER BY
+                    CASE WHEN sa.role = 'primary' THEN 0 ELSE 1 END,
+                    a.name ASC
+            ) AS artist_data
 
-            LEFT JOIN song_artists sa
-                ON sa.song_id = s.id
+        FROM songs s
 
-            LEFT JOIN artists a
-                ON a.id = sa.artist_id
-                AND a.deleted_at IS NULL
+        LEFT JOIN song_albums sal
+            ON sal.song_id = s.id
 
-            WHERE s.id IN ($placeholders)
+        LEFT JOIN song_artists sa
+            ON sa.song_id = s.id
 
-            GROUP BY
-                s.id,
-                s.title,
-                s.slug,
-                s.cover_url,
-                s.audio_url,
-                s.duration_seconds,
-                s.language,
-                s.release_date
-        ");
+        LEFT JOIN artists a
+            ON a.id = sa.artist_id
+            AND a.deleted_at IS NULL
 
-        $params = [$types];
-        foreach ($ids as $id) {
-            $params[] = $id;
-        }
+        WHERE s.id IN ($placeholders)
+
+        GROUP BY
+            s.id,
+            s.title,
+            s.slug,
+            s.cover_url,
+            s.audio_url,
+            s.duration_seconds,
+            s.language,
+            s.release_date,
+            sal.album_id
+    ");
+
+        $params = $ids;
+
         $this->bindDynamic($stmt, $params);
+
         $stmt->execute();
 
         $result = $stmt->get_result();
+
         $byId = [];
 
         while ($row = $result->fetch_assoc()) {
+            /*
+         * Build artists array
+         */
             $artists = [];
+
             if (!empty($row['artist_data'])) {
                 foreach (explode('||', $row['artist_data']) as $artist) {
                     $parts = explode('::', $artist, 3);
+
                     if (count($parts) === 3) {
                         $artists[] = [
-                            'id' => (int)$parts[0],
+                            'id' => (int) $parts[0],
                             'name' => $parts[1],
-                            'slug' => $parts[2]
+                            'slug' => $parts[2],
                         ];
                     }
                 }
             }
 
-            $seconds = (int)$row['duration_seconds'];
+            /*
+         * Duration
+         */
+            $seconds = (int) $row['duration_seconds'];
 
-            $byId[(int)$row['id']] = [
-                'id' => (int)$row['id'],
+            /*
+         * Album
+         */
+            $hasAlbum = !empty($row['album_id']);
+
+            /*
+         * Build song card
+         */
+            $byId[(int) $row['id']] = [
+                'id' => (int) $row['id'],
+
                 'title' => $row['title'],
+
                 'slug' => $row['slug'],
-                'haveAlbum' => (bool)$row['have_album'],
+
+                'haveAlbum' => $hasAlbum,
+
+                'album' => $hasAlbum
+                    ? [
+                        'id' => (int) $row['album_id'],
+                    ]
+                    : null,
+
                 'media' => [
                     'cover_url' => $row['cover_url'],
                     'audio_url' => $row['audio_url'],
                     'duration_seconds' => $seconds,
                 ],
+
                 'metadata' => [
                     'language' => $row['language'],
-                    'release_date' => $row['release_date']
+                    'release_date' => $row['release_date'],
                 ],
-                'artists' => $artists
+
+                'artists' => $artists,
             ];
         }
 
         $stmt->close();
 
         /*
-     * Preserve the original order of $ids.
+     * Preserve the original order of $ids
      */
         $ordered = [];
 
