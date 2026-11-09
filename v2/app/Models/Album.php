@@ -425,6 +425,7 @@ class Album extends Model
      */
     public function find(int $id): ?array
     {
+        // Get album details.
         $stmt = $this->db->prepare("
             SELECT
                 id,
@@ -443,11 +444,7 @@ class Album extends Model
             LIMIT 1
         ");
 
-        $stmt->bind_param(
-            "i",
-            $id
-        );
-
+        $stmt->bind_param("i", $id);
         $stmt->execute();
 
         $album = $stmt
@@ -458,6 +455,61 @@ class Album extends Model
 
         if (!$album) {
             return null;
+        }
+
+        // Get every active song ID for this album in track order.
+        $songStmt = $this->db->prepare("
+            SELECT
+                sal.song_id
+            FROM song_albums sal
+            INNER JOIN songs s
+                ON s.id = sal.song_id
+            WHERE sal.album_id = ?
+              AND s.is_active = 1
+              AND s.deleted_at IS NULL
+            ORDER BY
+                sal.disc_number ASC,
+                sal.track_number ASC,
+                s.id ASC
+        ");
+
+        $songStmt->bind_param("i", $id);
+        $songStmt->execute();
+
+        $songResult = $songStmt->get_result();
+        $songIds = [];
+
+        while ($songRow = $songResult->fetch_assoc()) {
+            $songIds[] = (int) $songRow['song_id'];
+        }
+
+        $songStmt->close();
+
+        // Build the full song cards, including each song's artists.
+        $songs = [];
+
+        if ($songIds !== []) {
+            $songModel = new Song();
+            $songs = $songModel->cardsByIds($songIds);
+        }
+
+        // Build a unique album-wide artist list from the song cards.
+        $artistsById = [];
+
+        foreach ($songs as $song) {
+            foreach (($song['artists'] ?? []) as $artist) {
+                $artistId = (int) ($artist['id'] ?? 0);
+
+                if ($artistId <= 0 || isset($artistsById[$artistId])) {
+                    continue;
+                }
+
+                $artistsById[$artistId] = [
+                    'id' => $artistId,
+                    'name' => $artist['name'],
+                    'slug' => $artist['slug'],
+                ];
+            }
         }
 
         return [
@@ -472,8 +524,11 @@ class Album extends Model
                 'album_type' => $album['album_type'],
                 'label' => $album['label'],
                 'copyright' => $album['copyright'],
-                'total_tracks' => (int) $album['total_tracks']
-            ]
+                'total_tracks' => (int) $album['total_tracks'],
+            ],
+
+            'artists' => array_values($artistsById),
+            'songs' => $songs,
         ];
     }
 
