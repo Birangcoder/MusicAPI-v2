@@ -493,24 +493,43 @@ class Album extends Model
             $songs = $songModel->cardsByIds($songIds);
         }
 
-        // Build a unique album-wide artist list from the song cards.
-        $artistsById = [];
+        // Get a unique list of all artists on this album, including image_url.
+        $artistStmt = $this->db->prepare("
+            SELECT DISTINCT
+                ar.id,
+                ar.name,
+                ar.slug,
+                ar.image_url
+            FROM song_albums sal
+            INNER JOIN songs s
+                ON s.id = sal.song_id
+            INNER JOIN song_artists sa
+                ON sa.song_id = s.id
+            INNER JOIN artists ar
+                ON ar.id = sa.artist_id
+            WHERE sal.album_id = ?
+              AND s.is_active = 1
+              AND s.deleted_at IS NULL
+              AND ar.deleted_at IS NULL
+            ORDER BY ar.name ASC
+        ");
 
-        foreach ($songs as $song) {
-            foreach (($song['artists'] ?? []) as $artist) {
-                $artistId = (int) ($artist['id'] ?? 0);
+        $artistStmt->bind_param("i", $id);
+        $artistStmt->execute();
 
-                if ($artistId <= 0 || isset($artistsById[$artistId])) {
-                    continue;
-                }
+        $artistResult = $artistStmt->get_result();
+        $artists = [];
 
-                $artistsById[$artistId] = [
-                    'id' => $artistId,
-                    'name' => $artist['name'],
-                    'slug' => $artist['slug'],
-                ];
-            }
+        while ($artist = $artistResult->fetch_assoc()) {
+            $artists[] = [
+                'id' => (int) $artist['id'],
+                'name' => $artist['name'],
+                'slug' => $artist['slug'],
+                'image_url' => $artist['image_url'],
+            ];
         }
+
+        $artistStmt->close();
 
         return [
             'id' => (int) $album['id'],
@@ -527,7 +546,7 @@ class Album extends Model
                 'total_tracks' => (int) $album['total_tracks'],
             ],
 
-            'artists' => array_values($artistsById),
+            'artists' => $artists,
             'songs' => $songs,
         ];
     }
